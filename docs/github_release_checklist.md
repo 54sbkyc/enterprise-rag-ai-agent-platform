@@ -5,6 +5,7 @@
 ## 必须提交
 
 - `README.md`：项目定位、截图、技术栈、运行方式、演示流程。
+- `LICENSE`：MIT 开源许可证，明确公开仓库的使用边界。
 - `.gitignore`：屏蔽本地运行文件、数据库、上传文件、缓存、Word 文档和隧道工具。
 - `.gitattributes`：固定源码与文档行尾，标记图片和压缩文件为二进制，避免跨平台差异。
 - `.env.example`：展示可配置环境变量，不包含真实密钥。
@@ -101,7 +102,7 @@
 2. 只添加发布版应提交内容：
 
    ```powershell
-   git add README.md .gitignore .gitattributes .env.example .github start.ps1 backend frontend samples SECURITY.md CONTRIBUTING.md docs/screenshots docs/diagrams docs/resume_project_card.md docs/portfolio_review_scorecard.md docs/architecture_decisions.md docs/interview_talking_points.md docs/demo_runbook.md docs/production_roadmap.md docs/final_acceptance_report.md docs/github_release_checklist.md scripts/prepare_github_release.ps1 scripts/verify_project.ps1
+   git add README.md LICENSE .gitignore .gitattributes .env.example .github start.ps1 backend frontend samples SECURITY.md CONTRIBUTING.md docs/screenshots docs/diagrams docs/resume_project_card.md docs/portfolio_review_scorecard.md docs/architecture_decisions.md docs/interview_talking_points.md docs/demo_runbook.md docs/production_roadmap.md docs/final_acceptance_report.md docs/github_release_checklist.md scripts/prepare_github_release.ps1 scripts/verify_project.ps1
    ```
 
 3. 提交：

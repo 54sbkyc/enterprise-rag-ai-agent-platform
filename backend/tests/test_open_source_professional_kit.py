@@ -99,3 +99,14 @@ def test_professional_markdown_links_resolve():
             if not link.exists():
                 missing.append(f"{doc.relative_to(ROOT)} -> {link.relative_to(ROOT)}")
     assert missing == []
+
+
+def test_repository_has_mit_license_linked_from_public_materials():
+    license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    checklist = (ROOT / "docs" / "github_release_checklist.md").read_text(encoding="utf-8")
+
+    assert license_text.startswith("MIT License")
+    assert "Copyright (c) 2026 sbkyc" in license_text
+    assert "LICENSE" in readme
+    assert "LICENSE" in checklist

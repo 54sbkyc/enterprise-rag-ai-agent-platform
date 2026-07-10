@@ -9,6 +9,7 @@ Write-Host ""
 
 $RequiredPaths = @(
     "README.md",
+    "LICENSE",
     "SECURITY.md",
     "CONTRIBUTING.md",
     ".gitignore",
