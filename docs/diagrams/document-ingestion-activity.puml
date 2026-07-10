@@ -1,0 +1,39 @@
+@startuml
+!theme plain
+title 文档入库与索引构建活动图
+
+skinparam backgroundColor white
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 14
+skinparam shadowing false
+skinparam ArrowColor #47627A
+skinparam activityBorderColor #476D88
+skinparam activityBackgroundColor #F5F9FC
+skinparam activityDiamondBorderColor #476D88
+skinparam activityDiamondBackgroundColor #E7F0F7
+
+start
+:技术员工选择文件和文档密级;
+:前端提交上传请求;
+
+if (文件类型与大小合法?) then (是)
+  :服务端保存原始文件;
+  :解析 TXT、Markdown、PDF 或 DOCX 文本;
+  if (文本可解析?) then (是)
+    :文本清洗与分段;
+    :统计分词词频;
+    :写入文档记录与知识片段;
+    :建立 TF-IDF 检索索引;
+    :生成初始版本记录;
+    :写入操作审计日志;
+    :返回文档编号、片段数和版本号;
+  else (否)
+    :标记文档处理失败;
+    :返回解析错误信息;
+  endif
+else (否)
+  :拒绝上传并提示校验原因;
+endif
+
+stop
+@enduml

@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>企业知识库问答管理系统</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='8' fill='%23137f79'/%3E%3Cpath d='M13 10h13a7 7 0 0 1 7 7v22H19a6 6 0 0 0-6 6V10Zm22 0h-2a7 7 0 0 0-7 7v22h3a6 6 0 0 1 6 6V10Z' fill='none' stroke='white' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M18 19h7M18 26h7M31 20h5' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260630-mobile-nav-fix" />
+  </head>
+  <body>
+    <section id="authLoading" class="login-screen">
+      <div class="login-card">
+        <div class="brand login-brand">
+          <div class="mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" focusable="false">
+              <path d="M12 10h13a7 7 0 0 1 7 7v21H18a6 6 0 0 0-6 6V10Z" />
+              <path d="M36 10h-4a7 7 0 0 0-7 7v21h5a6 6 0 0 1 6 6V10Z" />
+              <path d="M18 18h8" />
+              <path d="M18 25h8" />
+              <path d="M31 19h5" />
+            </svg>
+          </div>
+          <div>
+            <h1>企业知识库问答管理系统</h1>
+            <p>正在检查登录状态...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="loginScreen" class="login-screen hidden">
+      <div class="login-card">
+        <div class="brand login-brand">
+          <div class="mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" focusable="false">
+              <path d="M12 10h13a7 7 0 0 1 7 7v21H18a6 6 0 0 0-6 6V10Z" />
+              <path d="M36 10h-4a7 7 0 0 0-7 7v21h5a6 6 0 0 1 6 6V10Z" />
+              <path d="M18 18h8" />
+              <path d="M18 25h8" />
+              <path d="M31 19h5" />
+            </svg>
+          </div>
+          <div>
+            <h1>企业知识库问答管理系统</h1>
+            <p>GRADUATION DESIGN SYSTEM</p>
+          </div>
+        </div>
+        <form id="loginForm" autocomplete="on">
+          <label class="field-label" for="loginUsername">账号</label>
+          <input id="loginUsername" class="input" autocomplete="username" placeholder="输入账号" />
+          <label class="field-label" for="loginPassword">密码</label>
+          <input id="loginPassword" class="input" type="password" autocomplete="current-password" placeholder="输入密码" />
+          <button id="loginBtn" class="primary-btn full" type="submit">登录</button>
+          <div class="login-options">
+            <label><input id="rememberLogin" type="checkbox" checked /> 记住账号</label>
+            <button id="forgotPasswordBtn" type="button">忘记密码？</button>
+          </div>
+          <div class="secure-line">安全连接已启用</div>
+          <div id="loginStatus" class="status-line"></div>
+        </form>
+      </div>
+    </section>
+
+    <div id="appShell" class="app-shell hidden">
+      <aside class="sidebar mobile-nav-collapsed">
+        <div class="brand">
+          <div class="mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" focusable="false">
+              <path d="M12 10h13a7 7 0 0 1 7 7v21H18a6 6 0 0 0-6 6V10Z" />
+              <path d="M36 10h-4a7 7 0 0 0-7 7v21h5a6 6 0 0 1 6 6V10Z" />
+              <path d="M18 18h8" />
+              <path d="M18 25h8" />
+              <path d="M31 19h5" />
+            </svg>
+          </div>
+          <div>
+            <h1>企业知识库问答管理系统</h1>
+          </div>
+          <button
+            id="mobileNavToggle"
+            class="mobile-nav-toggle"
+            type="button"
+            aria-controls="primaryNav"
+            aria-expanded="false"
+            aria-label="展开导航"
+            title="展开导航"
+          >&#9776;</button>
+        </div>
+
+        <nav id="primaryNav" class="nav">
+          <button class="nav-item active" data-route="dashboard" data-permission="health.view"><span>首页总览</span></button>
+          <button class="nav-item" data-route="qa" data-permission="qa.use"><span>问答工作台</span></button>
+          <button class="nav-item" data-route="agent" data-permission="qa.use"><span>智能体工作台</span></button>
+          <button class="nav-item" data-route="documents" data-permission="documents.view"><span>文档管理</span></button>
+          <button class="nav-item" data-route="evaluation" data-permission="evaluation.manage"><span>评测中心</span></button>
+          <button class="nav-item" data-route="retrieval" data-permission="retrieval.debug"><span>检索调试</span></button>
+          <button class="nav-item" data-route="gaps" data-permission="gaps.manage"><span>知识缺口</span></button>
+          <button class="nav-item" data-route="health" data-permission="health.view"><span>健康体检</span></button>
+          <button class="nav-item" data-route="feedback" data-permission="feedback.manage"><span>反馈中心</span></button>
+          <button class="nav-item" data-route="users" data-permission="users.manage"><span>用户管理</span></button>
+          <button class="nav-item" data-route="roles" data-permission="roles.manage"><span>角色权限</span></button>
+          <button class="nav-item" data-route="logs" data-permission="audit.view"><span>操作审计</span></button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div>
+            <span id="healthBadge" class="badge muted">连接中</span>
+            <span id="userBadge" class="badge muted">未登录</span>
+          </div>
+          <button id="logoutBtn" class="ghost-btn small-btn">退出</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h2 id="pageTitle">首页总览</h2>
+            <p id="pageSubtitle">查看系统核心指标、最近问答和评测结果。</p>
+          </div>
+          <div class="metrics">
+            <div><strong id="docCount">0</strong><span>文档</span></div>
+            <div><strong id="logCount">0</strong><span>问答</span></div>
+            <div><strong id="lastConfidence">-</strong><span>置信度</span></div>
+          </div>
+          <div id="adminSession" class="top-session hidden">
+            <span id="adminUserBadge" class="badge muted">管理员</span>
+            <button id="adminTopLogoutBtn" class="ghost-btn small-btn">退出登录</button>
+          </div>
+          <div id="employeeSession" class="employee-session hidden">
+            <span id="employeeUserBadge" class="badge muted">普通员工</span>
+            <button id="employeeLogoutBtn" class="ghost-btn small-btn">退出</button>
+          </div>
+        </header>
+
+        <section id="page-dashboard" class="page active">
+          <section class="stats-grid">
+            <article class="stat-card"><span>可见文档</span><strong id="dashDocs">0</strong></article>
+            <article class="stat-card"><span>知识片段</span><strong id="dashChunks">0</strong></article>
+            <article class="stat-card"><span>今日问答</span><strong id="dashTodayQa">0</strong></article>
+            <article class="stat-card"><span>低置信问题</span><strong id="dashLowConfidenceCount">0</strong></article>
+            <article class="stat-card"><span>待补充知识</span><strong id="dashGapCount">0</strong></article>
+            <article class="stat-card"><span>用户总数</span><strong id="dashUsers">0</strong></article>
+            <article class="stat-card">
+              <span>大模型状态</span>
+              <strong id="dashLlm">本地</strong>
+            </article>
+          </section>
+
+          <section id="dashboardAiOpsPanel" class="panel ai-ops-panel">
+            <div class="panel-title">
+              <span>AI 运营指标</span>
+              <span id="dashAiRequestCount" class="badge muted">0 次问答调用</span>
+            </div>
+            <div class="ai-ops-grid">
+              <div class="ai-ops-metric">
+                <span>Token 总量</span>
+                <strong id="dashAiTokens">0</strong>
+              </div>
+              <div class="ai-ops-metric">
+                <span>估算成本</span>
+                <strong id="dashAiCost">$0.000000</strong>
+              </div>
+              <div class="ai-ops-metric">
+                <span>Agent 运行</span>
+                <strong id="dashAgentRuns">0</strong>
+              </div>
+              <div class="ai-ops-metric">
+                <span>工具调用</span>
+                <strong id="dashToolCalls">0</strong>
+              </div>
+            </div>
+            <div id="dashAgentRecentRuns" class="agent-recent-runs">
+              <div class="empty">暂无 Agent 运行记录。</div>
+            </div>
+          </section>
+
+          <section class="chart-grid">
+            <article class="panel">
+              <div class="panel-title"><span>文档密级分布</span></div>
+              <div id="dashAccessChart" class="bar-chart"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>问答趋势</span></div>
+              <div id="dashTrendChart" class="bar-chart"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>最近批量评测</span></div>
+              <div id="dashBatch" class="summary-box">暂无批量评测。</div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>最近问答</span></div>
+              <div id="dashLogs" class="compact-list"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>低置信度问题</span></div>
+              <div id="dashLowConfidence" class="compact-list"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>最近文档</span></div>
+              <div id="dashRecentDocs" class="compact-list"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>系统状态</span></div>
+              <div id="dashSystemStatus" class="system-status-list"></div>
+            </article>
+          </section>
+        </section>
+
+        <section id="page-qa" class="page">
+          <div class="qa-workspace">
+            <div class="qa-main">
+              <section class="employee-intro">
+                <h3>企业知识库问答助手</h3>
+                <p>可咨询请假、补贴、访客登记、网络安全等日常制度问题。</p>
+              </section>
+
+              <section class="panel ask-panel">
+                <div class="panel-title">
+                  <span>问题</span>
+                  <span id="confidenceBadge" class="badge muted">等待提问</span>
+                </div>
+                <textarea id="questionInput" placeholder="输入问题，例如：员工请假需要提前多久申请？"></textarea>
+                <div class="quick-question-row">
+                  <button class="ghost-btn small-btn" data-quick-question="员工请假需要提前多久申请？">请假流程</button>
+                  <button class="ghost-btn small-btn" data-quick-question="员工餐补和交通补贴怎么发放？">补贴规则</button>
+                  <button class="ghost-btn small-btn" data-quick-question="公司设备可以安装第三方软件吗？">网络安全</button>
+                  <button class="ghost-btn small-btn" data-quick-question="外来访客进入办公区需要怎么登记？">访客登记</button>
+                </div>
+                <div class="ask-actions">
+                  <button id="askBtn" class="primary-btn">提问</button>
+                  <span id="securityHint" class="danger-text"></span>
+                </div>
+              </section>
+
+              <section class="panel answer-panel">
+                <div class="panel-title">
+                  <span>回答</span>
+                  <div class="answer-tools">
+                    <span id="copyStatus" class="status-mini"></span>
+                    <button id="copyAnswerBtn" class="ghost-btn small-btn">复制回答</button>
+                  </div>
+                </div>
+                <div id="answerBox" class="answer-box">请选择左侧“文档管理”上传资料，或直接基于已导入文档提问。</div>
+                <div id="answerFeedback" class="answer-feedback hidden">
+                  <span>这次回答是否有帮助？</span>
+                  <button class="ghost-btn small-btn" data-feedback-rating="helpful">有用</button>
+                  <button class="ghost-btn small-btn" data-feedback-rating="unhelpful">无用</button>
+                  <button class="ghost-btn small-btn" data-feedback-rating="needs_info">需补充</button>
+                  <span id="feedbackStatus" class="status-mini"></span>
+                </div>
+              </section>
+
+              <section id="qaUsagePanel" class="panel qa-observability-panel manager-only">
+                <div class="panel-title">
+                  <span>调用用量</span>
+                  <span id="qaUsageModel" class="badge muted">未生成</span>
+                </div>
+                <div id="qaUsageGrid" class="usage-grid">
+                  <div class="empty">完成一次问答后显示 token 和成本估算。</div>
+                </div>
+              </section>
+
+              <section id="qaTracePanel" class="panel qa-observability-panel manager-only">
+                <div class="panel-title">
+                  <span>决策轨迹</span>
+                  <span id="qaTraceCount" class="badge muted">0</span>
+                </div>
+                <div id="qaTraceList" class="qa-trace-list">
+                  <div class="empty">完成一次问答后显示安全检查、权限范围、检索和生成过程。</div>
+                </div>
+              </section>
+
+              <section class="panel employee-history">
+                <div class="panel-title">
+                  <span>本次会话</span>
+                  <button id="clearSessionHistoryBtn" class="ghost-btn small-btn">清空</button>
+                </div>
+                <div id="sessionHistoryList" class="session-history-list">
+                  <div class="empty">本次登录后的问答会显示在这里。</div>
+                </div>
+              </section>
+            </div>
+
+            <aside class="panel citation-sidebar">
+              <div class="panel-title">
+                <span>引用片段</span>
+                <span id="citationCount" class="badge muted">0</span>
+              </div>
+              <div id="citationList" class="citation-list compact-citations"></div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="page-agent" class="page">
+          <div class="agent-workspace">
+            <div class="agent-main">
+              <section class="panel agent-run-panel">
+                <div class="panel-title">
+                  <span>Agent 任务</span>
+                  <span id="agentStatusBadge" class="badge muted">待运行</span>
+                </div>
+                <textarea id="agentGoalInput" placeholder="输入目标，例如：员工事假需要提前多久申请？"></textarea>
+                <div class="quick-question-row">
+                  <button class="ghost-btn small-btn" data-agent-goal="员工事假需要提前多久申请？">检索回答</button>
+                  <button class="ghost-btn small-btn" data-agent-goal="请创建知识缺口：公司量子卫星报销规则是什么？">创建缺口</button>
+                  <button class="ghost-btn small-btn" data-agent-goal="查看最近问答日志">查询日志</button>
+                </div>
+                <div class="ask-actions">
+                  <button id="runAgentBtn" class="primary-btn">运行 Agent</button>
+                  <span id="agentRunStatus" class="status-mini"></span>
+                </div>
+                <div id="agentPlanSummary" class="status-line">执行计划将在运行后显示。</div>
+              </section>
+
+              <section class="panel agent-result-panel">
+                <div class="panel-title">
+                  <span>最终回答</span>
+                  <span id="agentRunIdBadge" class="badge muted">未生成</span>
+                </div>
+                <div id="agentFinalAnswer" class="answer-box agent-answer">运行 Agent 后会显示最终回答。</div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-title">
+                  <span>工具调用</span>
+                  <span id="agentToolCount" class="badge muted">0</span>
+                </div>
+                <div id="agentToolTimeline" class="agent-tool-timeline">
+                  <div class="empty">运行 Agent 后会显示每一步工具调用。</div>
+                </div>
+              </section>
+            </div>
+
+            <aside class="panel agent-history-panel">
+              <div class="panel-title">
+                <span>运行历史</span>
+                <button id="refreshAgentRunsBtn" class="ghost-btn small-btn">刷新</button>
+              </div>
+              <div id="agentRunHistory" class="agent-history-list compact-list">
+                <div class="empty">暂无 Agent 运行记录。</div>
+              </div>
+              <div id="agentRunPagination" class="pagination"></div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="page-documents" class="page">
+          <div class="split-layout">
+            <section class="panel manager-only">
+              <div class="panel-title">
+                <span>文档入库</span>
+              </div>
+              <label class="dropzone" for="fileInput">
+                <input id="fileInput" type="file" accept=".txt,.md,.markdown,.pdf,.docx" />
+                <span class="upload-icon">+</span>
+                <strong>选择知识库文档</strong>
+                <small>TXT / Markdown / PDF / DOCX · 单文件不超过 10 MB</small>
+              </label>
+              <label class="field-label" for="accessLevelSelect">文档密级</label>
+              <select id="accessLevelSelect" class="input">
+                <option value="internal">内部资料</option>
+                <option value="public">公开资料</option>
+                <option value="sensitive">敏感资料</option>
+              </select>
+              <button id="uploadBtn" class="primary-btn full">上传并建立索引</button>
+              <button id="rebuildEmbeddingsBtn" class="ghost-btn full">重建向量索引</button>
+              <div id="uploadStatus" class="status-line"></div>
+              <div id="embeddingRebuildStatus" class="status-line"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-title">
+                <span>文档资产</span>
+                <button id="refreshDocsBtn" class="ghost-btn">刷新</button>
+              </div>
+              <div class="filter-row">
+                <input id="docSearch" class="input" placeholder="搜索标题或文件名" />
+                <select id="docAccessFilter" class="input">
+                  <option value="">全部密级</option>
+                  <option value="public">公开资料</option>
+                  <option value="internal">内部资料</option>
+                  <option value="sensitive">敏感资料</option>
+                </select>
+                <select id="docTypeFilter" class="input">
+                  <option value="">全部类型</option>
+                  <option value="md">MD</option>
+                  <option value="txt">TXT</option>
+                  <option value="pdf">PDF</option>
+                  <option value="docx">DOCX</option>
+                </select>
+                <select id="docSort" class="input">
+                  <option value="newest">最新优先</option>
+                  <option value="oldest">最早优先</option>
+                </select>
+              </div>
+              <div id="documentList" class="document-list"></div>
+              <div id="documentPagination" class="pagination"></div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-title">
+              <span>知识片段</span>
+              <span id="chunkCountBadge" class="badge muted">未选择文档</span>
+            </div>
+            <div id="documentDetail" class="chunk-list">
+              <div class="empty">在文档资产中选择“片段”查看切分结果。</div>
+            </div>
+            <div id="chunkPagination" class="pagination"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              <span>版本历史</span>
+              <span class="badge muted">V</span>
+            </div>
+            <div id="documentVersions" class="compact-list">
+              <div class="empty">在文档资产中选择“版本”查看变更历史。</div>
+            </div>
+            <div id="versionPagination" class="pagination"></div>
+          </section>
+        </section>
+
+        <section id="page-evaluation" class="page">
+          <section class="panel">
+            <div class="panel-title">
+              <span>真实问答质量筛查</span>
+              <button id="refreshQualityBtn" class="ghost-btn">刷新</button>
+            </div>
+            <div class="filter-row quality-filter-row">
+              <input id="qualitySearch" class="input" placeholder="搜索问题或提问人" />
+              <select id="qualityLevelFilter" class="input">
+                <option value="">全部等级</option>
+                <option value="passed">通过</option>
+                <option value="watch">关注</option>
+                <option value="review">待复核</option>
+                <option value="blocked">已拦截</option>
+                <option value="failed">筛查失败</option>
+              </select>
+            </div>
+            <div id="qualityAssessmentList" class="business-table-wrap"></div>
+            <div id="qualityPagination" class="pagination"></div>
+          </section>
+
+          <section class="stats-grid">
+            <article class="stat-card">
+              <span>知识片段</span>
+              <strong id="statChunks">0</strong>
+            </article>
+            <article class="stat-card">
+              <span>安全拦截</span>
+              <strong id="statBlocked">0</strong>
+            </article>
+            <article class="stat-card">
+              <span>平均置信度</span>
+              <strong id="statConfidence">0%</strong>
+              <div class="meter"><span id="confidenceMeter"></span></div>
+            </article>
+            <article class="stat-card">
+              <span>评测均分</span>
+              <strong id="statEvalScore">0%</strong>
+              <div class="meter"><span id="evalMeter"></span></div>
+            </article>
+          </section>
+
+          <section class="chart-grid">
+            <article class="panel">
+              <div class="panel-title"><span>文档密级分布</span></div>
+              <div id="accessChart" class="bar-chart"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>问答趋势</span></div>
+              <div id="trendChart" class="bar-chart"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>评测得分分布</span></div>
+              <div id="scoreChart" class="bar-chart"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>最新批量结果</span></div>
+              <div id="batchSummary" class="summary-box">暂无批量评测结果。</div>
+            </article>
+          </section>
+
+          <div class="split-layout">
+            <section class="panel">
+              <div class="panel-title">
+                <span>新增评测</span>
+              </div>
+              <label class="field-label" for="evalQuestion">评测问题</label>
+              <input id="evalQuestion" class="input" placeholder="例如：敏感资料可以通过个人网盘发送吗？" />
+              <label class="field-label" for="evalKeywords">期望关键词</label>
+              <input id="evalKeywords" class="input" placeholder="拒绝, 敏感资料, 未经批准" />
+              <label class="field-label" for="evalDocuments">期望来源文档</label>
+              <input id="evalDocuments" class="input" placeholder="ordinary_enterprise_handbook" />
+              <button id="evaluateBtn" class="primary-btn full">记录评测</button>
+              <button id="batchEvaluateBtn" class="ghost-btn full">运行内置批量评测</button>
+              <div id="evalResult" class="status-line"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-title">
+                <span>评测记录</span>
+                <button id="refreshEvaluationsBtn" class="ghost-btn">刷新</button>
+              </div>
+              <div id="batchRunList" class="compact-list"></div>
+              <div id="batchPagination" class="pagination"></div>
+              <div id="evaluationList" class="log-list"></div>
+              <div id="evaluationPagination" class="pagination"></div>
+            </section>
+          </div>
+
+          <section class="panel manager-only">
+            <div class="panel-title">
+              <span>评测用例管理</span>
+              <button id="refreshCasesBtn" class="ghost-btn">刷新</button>
+            </div>
+            <div class="case-form">
+              <input id="caseQuestion" class="input" placeholder="评测问题" />
+              <input id="caseKeywords" class="input" placeholder="期望关键词，逗号分隔" />
+              <input id="caseDocuments" class="input" placeholder="期望来源文档，逗号分隔" />
+              <label class="inline-check"><input id="caseShouldAnswer" type="checkbox" checked /> 该问题应有答案</label>
+              <button id="createCaseBtn" class="primary-btn">新增用例</button>
+            </div>
+            <div id="caseStatus" class="status-line"></div>
+            <div id="caseList" class="log-list"></div>
+            <div id="casePagination" class="pagination"></div>
+          </section>
+        </section>
+
+        <section id="page-retrieval" class="page">
+          <section class="panel">
+            <div class="panel-title">
+              <span>检索测试</span>
+              <span id="retrievalCount" class="badge muted">0</span>
+            </div>
+            <div class="retrieval-row">
+              <input id="retrievalQuery" class="input" placeholder="输入检索问题，例如：合同总价是多少？" />
+              <input id="retrievalTopK" class="input small-input" type="number" min="1" max="10" value="5" />
+              <button id="retrievalBtn" class="primary-btn">检索</button>
+            </div>
+            <div id="retrievalStatus" class="status-line"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              <span>检索结果</span>
+            </div>
+            <div id="retrievalList" class="citation-grid">
+              <div class="empty">输入问题后查看命中的知识片段。</div>
+            </div>
+          </section>
+        </section>
+
+        <section id="page-logs" class="page">
+          <section class="panel">
+            <div class="panel-title">
+              <span>审计日志</span>
+              <div class="toolbar-actions">
+                <button id="refreshLogsBtn" class="ghost-btn">刷新</button>
+                <button id="clearLogsBtn" class="delete-btn wide-delete-btn admin-only">清理记录</button>
+              </div>
+            </div>
+            <div id="logsStatus" class="status-line"></div>
+            <div id="logList" class="log-list"></div>
+            <div id="logPagination" class="pagination"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-title">
+              <span>管理操作记录</span>
+              <div class="toolbar-actions">
+                <button id="refreshAuditBtn" class="ghost-btn">刷新</button>
+                <button id="clearAuditBtn" class="delete-btn wide-delete-btn">清理记录</button>
+              </div>
+            </div>
+            <div id="auditStatus" class="status-line"></div>
+            <div id="auditList" class="log-list"></div>
+            <div id="auditPagination" class="pagination"></div>
+          </section>
+        </section>
+
+        <section id="page-gaps" class="page">
+          <section class="panel">
+            <div class="panel-title">
+              <span>知识缺口中心</span>
+              <button id="refreshGapsBtn" class="ghost-btn">刷新</button>
+            </div>
+            <div class="gap-toolbar">
+              <select id="gapStatusFilter" class="input">
+                <option value="">全部状态</option>
+                <option value="open">待补充</option>
+                <option value="processing">处理中</option>
+                <option value="resolved">已解决</option>
+                <option value="closed">无需处理</option>
+              </select>
+              <button id="createGapFromQuestionBtn" class="ghost-btn">从当前问题创建</button>
+            </div>
+            <div id="gapList" class="log-list"></div>
+            <div id="gapPagination" class="pagination"></div>
+          </section>
+        </section>
+
+        <section id="page-health" class="page">
+          <section class="health-hero panel">
+            <div class="health-score-card">
+              <div id="healthScoreRing" class="score-ring" style="--score: 0%">
+                <strong id="healthScore">0</strong>
+                <span>健康分</span>
+              </div>
+              <div>
+                <div class="panel-title">
+                  <span>知识库健康体检</span>
+                  <span id="healthGrade" class="badge muted">待检测</span>
+                </div>
+                <p id="healthSummary">系统会自动分析文档质量、低置信问答和知识缺口，生成可解释的治理建议。</p>
+              </div>
+            </div>
+            <div class="health-actions">
+              <button id="exportHealthMdBtn" class="ghost-btn">导出 Markdown</button>
+              <button id="exportHealthCsvBtn" class="ghost-btn">导出 CSV</button>
+              <button id="refreshHealthBtn" class="primary-btn">重新体检</button>
+            </div>
+          </section>
+
+          <section id="healthMetricGrid" class="stats-grid health-metrics"></section>
+
+          <section class="chart-grid health-layout">
+            <article class="panel">
+              <div class="panel-title"><span>优化建议</span></div>
+              <div id="healthRecommendations" class="compact-list"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>风险文档</span></div>
+              <div id="healthDocuments" class="compact-list"></div>
+              <div id="healthDocumentPagination" class="pagination"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>低置信样本</span></div>
+              <div id="healthLowConfidence" class="compact-list"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title"><span>缺口状态</span></div>
+              <div id="healthGapStatus" class="system-status-list"></div>
+            </article>
+          </section>
+        </section>
+
+        <section id="page-feedback" class="page">
+          <section class="panel">
+            <div class="panel-title">
+              <span>问答反馈中心</span>
+              <button id="refreshFeedbackBtn" class="ghost-btn">刷新</button>
+            </div>
+            <div id="feedbackList" class="log-list"></div>
+            <div id="feedbackPagination" class="pagination"></div>
+          </section>
+        </section>
+
+        <section id="page-users" class="page">
+          <div class="split-layout">
+            <section class="panel">
+              <div class="panel-title"><span>新增用户</span></div>
+              <label class="field-label" for="newUsername">账号</label>
+              <input id="newUsername" class="input" placeholder="例如：王五" />
+              <label class="field-label" for="newPassword">初始密码</label>
+              <input id="newPassword" class="input" type="password" placeholder="至少 4 位" />
+              <label class="field-label" for="newRole">角色</label>
+              <select id="newRole" class="input">
+                <option value="employee">普通员工</option>
+                <option value="tech">技术员工</option>
+                <option value="admin">管理员</option>
+              </select>
+              <button id="createUserBtn" class="primary-btn full">创建用户</button>
+              <div id="userStatus" class="status-line"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-title">
+                <span>用户列表</span>
+                <button id="refreshUsersBtn" class="ghost-btn">刷新</button>
+              </div>
+              <div class="user-filter-row">
+                <input id="userSearch" class="input" placeholder="搜索账号" />
+                <select id="userRoleFilter" class="input">
+                  <option value="">全部角色</option>
+                  <option value="employee">普通员工</option>
+                  <option value="tech">技术员工</option>
+                  <option value="admin">管理员</option>
+                </select>
+                <select id="userStatusFilter" class="input">
+                  <option value="">全部状态</option>
+                  <option value="active">启用</option>
+                  <option value="disabled">禁用</option>
+                </select>
+              </div>
+              <div id="userList" class="log-list"></div>
+              <div id="userPagination" class="pagination"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="page-roles" class="page">
+          <section class="panel">
+            <div class="panel-title">
+              <span>角色权限矩阵</span>
+              <button id="refreshRolesBtn" class="ghost-btn">刷新</button>
+            </div>
+            <p class="panel-note">按角色配置可访问模块和可执行操作。锁定权限用于保障系统始终可管理。</p>
+            <div id="rolePermissionMatrix" class="permission-matrix"></div>
+            <div class="permission-actions">
+              <button id="saveRolesBtn" class="primary-btn">保存权限配置</button>
+              <span id="rolePermissionStatus" class="status-line"></span>
+            </div>
+          </section>
+        </section>
+
+      </main>
+    </div>
+
+    <script src="/static/app.js?v=20260710-release-candidate"></script>
+  </body>
+</html>

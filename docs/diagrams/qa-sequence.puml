@@ -1,0 +1,43 @@
+@startuml
+!theme plain
+title 企业知识问答时序图
+
+skinparam backgroundColor white
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam ArrowColor #47627A
+skinparam ParticipantBorderColor #476D88
+skinparam ParticipantBackgroundColor #F5F9FC
+skinparam LifeLineBorderColor #7B94A8
+skinparam LifeLineBackgroundColor white
+
+actor "普通员工" as Employee
+participant "浏览器前端" as Web
+participant "FastAPI 问答接口" as API
+participant "权限与安全模块" as Security
+participant "TF-IDF 检索模块" as Search
+database "SQLite 知识库" as DB
+participant "回答生成模块" as Answer
+participant "质量筛查任务" as Quality
+
+Employee -> Web : 输入问题并提交
+Web -> API : POST /api/ask
+API -> Security : 校验会话、问答权限和敏感内容
+Security --> API : 用户身份与可访问密级
+API -> Search : compute_answer(question, top_k)
+Search -> DB : 读取权限范围内的文档片段
+DB --> Search : 片段文本与词频数据
+Search -> Search : 构建查询向量\n计算余弦相似度并排序
+Search --> API : Top-K 命中片段
+API -> Answer : 生成基于证据的回答与置信度
+Answer --> API : 回答、引用、置信度
+API -> DB : 保存问答日志
+API -->> Quality : 后台创建质量筛查任务
+API --> Web : 返回回答、引用与日志编号
+Web --> Employee : 展示回答结果
+
+Quality -> DB : 读取问答日志和引用分数
+Quality -> Quality : 计算综合质量分与风险原因
+Quality -> DB : 保存质量筛查结果
+@enduml

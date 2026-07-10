@@ -1,0 +1,48 @@
+@startuml
+!theme plain
+title 问答质量筛查与知识优化闭环活动图
+
+skinparam backgroundColor white
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 14
+skinparam shadowing false
+skinparam ArrowColor #47627A
+skinparam activityBorderColor #476D88
+skinparam activityBackgroundColor #F5F9FC
+skinparam activityDiamondBorderColor #476D88
+skinparam activityDiamondBackgroundColor #E7F0F7
+
+start
+:普通员工提交真实问题;
+:系统检索片段并生成回答;
+:记录置信度、最高相似度与引用数量;
+:计算综合质量分;
+
+if (回答被安全策略拦截?) then (是)
+  :标记为已拦截;
+else (否)
+  if (质量分不低于 0.75?) then (是)
+    :标记为通过;
+  else (否)
+    if (质量分不低于 0.55?) then (是)
+      :进入关注队列;
+    else (否)
+      :进入人工复核队列;
+      :创建或复用知识缺口;
+      :技术员工认领并分析原因;
+      :补充或修订知识文档;
+      :重建文档索引;
+      :使用原问题重新评测;
+      if (复评质量分通过?) then (是)
+        :记录优化前后分数与引用;
+        :关闭知识缺口;
+      else (否)
+        :保持处理中并继续优化;
+      endif
+    endif
+  endif
+endif
+
+:沉淀质量记录与审计证据;
+stop
+@enduml

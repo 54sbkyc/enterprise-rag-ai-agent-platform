@@ -1,0 +1,147 @@
+@startuml
+!theme plain
+title 企业知识库问答管理系统核心数据 E-R 图
+left to right direction
+
+skinparam backgroundColor white
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam ArrowColor #47627A
+skinparam EntityBorderColor #476D88
+skinparam EntityBackgroundColor #F7FAFC
+skinparam EntityFontColor #17324A
+
+entity "用户 users" as users {
+  * id : INTEGER <<PK>>
+  --
+  username : TEXT <<UK>>
+  password_hash : TEXT
+  role : TEXT
+  display_name : TEXT
+  is_active : INTEGER
+}
+
+entity "角色权限 role_permissions" as permissions {
+  * id : INTEGER <<PK>>
+  --
+  role : TEXT
+  permission_code : TEXT
+  is_allowed : INTEGER
+  updated_by : INTEGER <<FK>>
+}
+
+entity "文档 documents" as documents {
+  * id : INTEGER <<PK>>
+  --
+  title : TEXT
+  filename : TEXT
+  file_type : TEXT
+  access_level : TEXT
+  status : TEXT
+  version : INTEGER
+}
+
+entity "文档版本 document_versions" as versions {
+  * id : INTEGER <<PK>>
+  --
+  document_id : INTEGER <<FK>>
+  version : INTEGER
+  action : TEXT
+  created_by : INTEGER <<FK>>
+}
+
+entity "知识片段 chunks" as chunks {
+  * id : INTEGER <<PK>>
+  --
+  document_id : INTEGER <<FK>>
+  chunk_index : INTEGER
+  content : TEXT
+  token_json : TEXT
+}
+
+entity "问答日志 qa_logs" as logs {
+  * id : INTEGER <<PK>>
+  --
+  user_id : INTEGER <<FK>>
+  question : TEXT
+  answer : TEXT
+  confidence : REAL
+  citations_json : TEXT
+}
+
+entity "质量筛查 qa_quality_assessments" as quality {
+  * id : INTEGER <<PK>>
+  --
+  log_id : INTEGER <<FK,UK>>
+  quality_score : REAL
+  quality_level : TEXT
+  risk_reasons_json : TEXT
+  status : TEXT
+}
+
+entity "回答反馈 qa_feedback" as feedback {
+  * id : INTEGER <<PK>>
+  --
+  log_id : INTEGER <<FK>>
+  user_id : INTEGER <<FK>>
+  rating : TEXT
+  note : TEXT
+}
+
+entity "知识缺口 knowledge_gaps" as gaps {
+  * id : INTEGER <<PK>>
+  --
+  source_log_id : INTEGER <<FK>>
+  question : TEXT
+  status : TEXT
+  assigned_to : INTEGER <<FK>>
+  resolution_action : TEXT
+  before_score : REAL
+  after_score : REAL
+}
+
+entity "评测用例 evaluation_cases" as cases {
+  * id : INTEGER <<PK>>
+  --
+  question : TEXT
+  expected_keywords : TEXT
+  expected_documents : TEXT
+  created_by : INTEGER <<FK>>
+}
+
+entity "单条评测 evaluations" as results {
+  * id : INTEGER <<PK>>
+  --
+  question : TEXT
+  expected_keywords : TEXT
+  expected_documents : TEXT
+  score : REAL
+  answer : TEXT
+  user_id : INTEGER <<FK>>
+}
+
+entity "审计日志 audit_logs" as audit {
+  * id : INTEGER <<PK>>
+  --
+  user_id : INTEGER <<FK>>
+  action : TEXT
+  target_type : TEXT
+  target_id : INTEGER
+}
+
+users ||--o{ permissions : 更新
+users ||--o{ versions : 创建
+users ||--o{ logs : 提问
+users ||--o{ feedback : 提交
+users ||--o{ gaps : 负责
+users ||--o{ cases : 创建
+users ||--o{ results : 执行
+users ||--o{ audit : 操作
+
+documents ||--o{ chunks : 包含
+documents ||--o{ versions : 形成
+logs ||--|| quality : 产生
+logs ||--o{ feedback : 获得
+logs ||--o| gaps : 触发
+@enduml

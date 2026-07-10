@@ -1,0 +1,64 @@
+@startuml
+!theme plain
+title 企业知识库问答管理系统用例图
+left to right direction
+
+skinparam backgroundColor white
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 14
+skinparam shadowing false
+skinparam ArrowColor #47627A
+skinparam actorBorderColor #274C68
+skinparam actorFontColor #17324A
+skinparam usecaseBorderColor #476D88
+skinparam usecaseBackgroundColor #F5F9FC
+skinparam usecaseFontColor #17324A
+skinparam rectangleBorderColor #7B94A8
+
+actor "普通员工" as Employee
+actor "技术员工" as Technician
+actor "系统管理员" as Admin
+
+Technician --|> Employee
+Admin --|> Technician
+
+rectangle "企业知识库问答管理系统" {
+  usecase "登录与退出" as UC_Login
+  usecase "提交知识问答" as UC_Ask
+  usecase "查看回答与引用" as UC_Citation
+  usecase "提交回答反馈" as UC_Feedback
+
+  usecase "维护知识文档" as UC_Doc
+  usecase "查看文档版本" as UC_Version
+  usecase "调试检索结果" as UC_Retrieval
+  usecase "执行标准用例评测" as UC_Eval
+  usecase "处理知识缺口" as UC_Gap
+  usecase "复评优化结果" as UC_Recheck
+  usecase "查看知识库健康报告" as UC_Health
+
+  usecase "管理用户" as UC_User
+  usecase "配置角色权限" as UC_Role
+  usecase "查看操作审计" as UC_Audit
+}
+
+Employee --> UC_Login
+Employee --> UC_Ask
+Employee --> UC_Citation
+Employee --> UC_Feedback
+
+Technician --> UC_Doc
+Technician --> UC_Version
+Technician --> UC_Retrieval
+Technician --> UC_Eval
+Technician --> UC_Gap
+Technician --> UC_Recheck
+Technician --> UC_Health
+
+Admin --> UC_User
+Admin --> UC_Role
+Admin --> UC_Audit
+
+UC_Ask .> UC_Citation : <<include>>
+UC_Feedback .> UC_Gap : <<extend>>
+UC_Gap .> UC_Recheck : <<include>>
+@enduml

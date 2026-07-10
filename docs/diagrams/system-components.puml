@@ -1,0 +1,64 @@
+@startuml
+!theme plain
+title 企业知识库问答管理系统组件图
+top to bottom direction
+
+skinparam backgroundColor white
+skinparam defaultFontName "Microsoft YaHei"
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam ArrowColor #47627A
+skinparam ComponentBorderColor #476D88
+skinparam ComponentBackgroundColor #F5F9FC
+skinparam DatabaseBorderColor #476D88
+skinparam DatabaseBackgroundColor #EEF5FA
+skinparam PackageBorderColor #9AAEBC
+
+actor "普通员工" as Employee
+actor "技术员工" as Technician
+actor "系统管理员" as Admin
+
+package "浏览器表示层" {
+  component "响应式 Web 前端\nHTML / CSS / JavaScript" as Web
+}
+
+package "FastAPI 服务层" {
+  component "REST API 路由" as API
+  component "认证与 RBAC" as Auth
+  component "文档管理服务" as Document
+  component "问答编排服务" as QA
+  component "TF-IDF 检索服务" as Retrieval
+  component "质量评测服务" as Evaluation
+  component "知识缺口服务" as Gap
+  component "审计与统计服务" as Audit
+}
+
+package "数据与文件层" {
+  database "SQLite 数据库" as SQLite
+  folder "上传文档目录" as Uploads
+}
+
+Technician --> Web
+Admin --> Web
+Employee --> Web
+Web --> API : HTTPS / JSON
+API --> Auth : 身份与权限校验
+API --> Document
+API --> QA
+API --> Evaluation
+API --> Gap
+API --> Audit
+
+QA --> Retrieval
+Evaluation --> Retrieval
+Gap --> QA : 无日志复评
+
+Auth --> SQLite
+Document --> SQLite
+Document --> Uploads
+Retrieval --> SQLite
+QA --> SQLite
+Evaluation --> SQLite
+Gap --> SQLite
+Audit --> SQLite
+@enduml
