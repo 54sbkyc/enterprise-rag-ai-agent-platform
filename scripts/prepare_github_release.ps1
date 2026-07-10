@@ -9,6 +9,7 @@ Write-Host ""
 
 $RequiredPaths = @(
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "SECURITY.md",
     "CONTRIBUTING.md",
@@ -42,7 +43,8 @@ $RequiredPaths = @(
     "docs/screenshots/qa-observability.png",
     "docs/diagrams/README.md",
     "docs/diagrams/system-components.puml",
-    "docs/diagrams/system-components.svg"
+    "docs/diagrams/system-components.svg",
+    "docs/releases/v1.1.0.md"
 )
 
 $BlockedPaths = @(
@@ -123,7 +125,8 @@ $MarkdownFilesToValidate = @(
     "docs/interview_talking_points.md",
     "docs/demo_runbook.md",
     "docs/final_acceptance_report.md",
-    "docs/diagrams/README.md"
+    "docs/diagrams/README.md",
+    "docs/releases/v1.1.0.md"
 )
 
 $PublicPatternsToScanForSecrets = @(
@@ -139,7 +142,8 @@ $PublicPatternsToScanForSecrets = @(
     "samples/*.md",
     "docs/*.md",
     "docs/diagrams/*.md",
-    "docs/diagrams/*.puml"
+    "docs/diagrams/*.puml",
+    "docs/releases/*.md"
 )
 
 $SecretPatterns = @(

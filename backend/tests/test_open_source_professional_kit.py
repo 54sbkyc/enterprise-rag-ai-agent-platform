@@ -110,3 +110,15 @@ def test_repository_has_mit_license_linked_from_public_materials():
     assert "Copyright (c) 2026 sbkyc" in license_text
     assert "LICENSE" in readme
     assert "LICENSE" in checklist
+
+
+def test_public_release_notes_match_application_version():
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    release_notes = (ROOT / "docs" / "releases" / "v1.1.0.md").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "## [1.1.0] - 2026-07-10" in changelog
+    assert "113 项 pytest" in changelog
+    assert "v1.1.0 - Practical AI Application Release" in release_notes
+    assert "docs/releases/v1.1.0.md" in readme
+    assert "CHANGELOG.md" in readme
