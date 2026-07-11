@@ -26,6 +26,7 @@
 - `docs/architecture_decisions.md`：架构决策记录，说明 FastAPI、SQLite、混合检索、Agent 规划与发布治理等取舍。
 - `docs/interview_talking_points.md`：面试讲解要点。
 - `docs/demo_runbook.md`：面向 AI 应用开发岗位的 8 分钟演示脚本和生产化追问。
+- `docs/interview_demo_checklist.md`：面试前环境检查、演示主线和故障预案。
 - `docs/production_roadmap.md`：生产化演进路径，说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent、部门级 ACL 等升级方向。
 - `docs/final_acceptance_report.md`：最终验收报告，说明功能完成度、工程完成度、发布前验证和生产化边界。
 - `docs/screenshots/`：README 使用的展示截图。
@@ -103,7 +104,7 @@
 2. 只添加发布版应提交内容：
 
    ```powershell
-   git add README.md CHANGELOG.md LICENSE .gitignore .gitattributes .env.example .github start.ps1 backend frontend samples SECURITY.md CONTRIBUTING.md docs/screenshots docs/diagrams docs/releases docs/resume_project_card.md docs/portfolio_review_scorecard.md docs/architecture_decisions.md docs/interview_talking_points.md docs/demo_runbook.md docs/production_roadmap.md docs/final_acceptance_report.md docs/github_release_checklist.md scripts/prepare_github_release.ps1 scripts/verify_project.ps1
+   git add README.md CHANGELOG.md LICENSE .gitignore .gitattributes .env.example .github start.ps1 backend frontend samples SECURITY.md CONTRIBUTING.md docs/screenshots docs/diagrams docs/releases docs/resume_project_card.md docs/portfolio_review_scorecard.md docs/architecture_decisions.md docs/interview_talking_points.md docs/interview_demo_checklist.md docs/demo_runbook.md docs/production_roadmap.md docs/final_acceptance_report.md docs/github_release_checklist.md scripts/prepare_github_release.ps1 scripts/verify_project.ps1
    ```
 
 3. 提交：

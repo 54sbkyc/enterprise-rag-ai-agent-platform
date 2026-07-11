@@ -16,6 +16,7 @@
 | [面试官评分卡](docs/portfolio_review_scorecard.md) | 从 AI 应用、后端、全栈、安全、测试和生产化角度评估项目含金量。 |
 | [面试讲解要点](docs/interview_talking_points.md) | 准备常见追问和演示讲法。 |
 | [AI 应用演示脚本](docs/demo_runbook.md) | 按 8 分钟主线展示 RAG、Agent、安全、评测和工程交付。 |
+| [面试演示检查清单](docs/interview_demo_checklist.md) | 面试前一天和前五分钟的环境、主线与故障预案检查。 |
 | [生产化路线图](docs/production_roadmap.md) | 说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent 和 ACL 升级路径。 |
 | [最终验收报告](docs/final_acceptance_report.md) | 说明发布前验收、工程完整度和诚实边界。 |
 | [v1.1.0 版本说明](docs/releases/v1.1.0.md) | 查看首个公开版本的能力、验证结果和生产化边界。 |
