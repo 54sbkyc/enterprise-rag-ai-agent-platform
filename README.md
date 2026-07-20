@@ -1,8 +1,8 @@
 # 企业知识库 RAG + AI Agent 平台
 
-[![Tests](https://github.com/sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml/badge.svg)](https://github.com/sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml)
-[![Release](https://img.shields.io/github/v/release/sbkyc/enterprise-rag-ai-agent-platform)](https://github.com/sbkyc/enterprise-rag-ai-agent-platform/releases)
-[![License](https://img.shields.io/github/license/sbkyc/enterprise-rag-ai-agent-platform)](LICENSE)
+[![Tests](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml/badge.svg)](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/54sbkyc/enterprise-rag-ai-agent-platform)](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases)
+[![License](https://img.shields.io/github/license/54sbkyc/enterprise-rag-ai-agent-platform)](LICENSE)
 
 一个面向 AI 应用开发岗位的 Python 全栈项目。当前实用性增强版本为 `v1.1.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志和 AI 调用可观测。
 
@@ -40,7 +40,7 @@
 | 能力 | 项目体现 |
 | --- | --- |
 | RAG 应用落地 | 文档解析、切分、BM25、可选 Embedding、融合重排、Top-K 引用回答 |
-| AI Agent 工程 | 受控模型规划、工具白名单、权限检查、超时重试、运行状态和调用轨迹 |
+| AI Agent 工程 | 受控模型规划、工具白名单、进程内异步任务、幂等提交、取消重试和调用轨迹 |
 | 可观测性 | 每次问答返回决策轨迹、token 估算、成本估算；首页汇总 AI 运营指标 |
 | 质量评测 | 支持 Recall@K、MRR、答案正确率、拒答准确率和 Markdown/CSV 报告导出 |
 | 企业安全 | 角色权限、文档密级过滤、Prompt 注入拦截、敏感信息脱敏、审计日志 |
@@ -54,7 +54,7 @@
 - 依据覆盖闸门：回答前检查问题关键条件是否出现在 Top-K 依据中，覆盖不足时保守拒答，并在决策轨迹中展示覆盖率和缺失词。
 - 权限控制：内置管理员与普通员工角色，后端接口和前端页面都按权限收敛。
 - RAG 问答：基于可访问文档检索片段，返回有依据的回答和引用来源。
-- Agent 工作台：支持确定性或模型规划，展示每一步工具输入、重试次数、耗时、状态、输出和最终结果。
+- Agent 工作台：异步提交任务并轮询持久化状态，支持幂等键、协作式取消、失败重试，同时展示每一步工具输入、耗时和输出。
 - AI 可观测：问答页展示安全检查、权限范围、检索、生成等轨迹，以及 token 和成本估算。
 - 运行降级透明：区分大模型生成、本地抽取和模型失败后的本地降级，优先使用供应商返回的 Token 用量。
 - 首页运营指标：汇总 token、成本、Agent 运行次数、工具调用次数和最近 Agent 运行。
@@ -229,4 +229,4 @@ enterprise-rag-qa
 - 将本地融合重排升级为独立 rerank 模型，并建立线上难例集。
 - 将 SQLite 替换为 PostgreSQL，并加入迁移工具。
 - 接入真实 SSO、部门 ACL 和更细粒度的文档权限。
-- 将当前同步 Agent 运行迁移到异步任务队列，并增加取消、幂等和人工审批节点。
+- 将当前进程内异步 Agent 执行器迁移到 Redis/Celery 等外部任务队列，并增加租约、跨实例恢复和人工审批节点。

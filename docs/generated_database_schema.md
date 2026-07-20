@@ -15,6 +15,7 @@
 | `evaluation_cases` | 存储批量评测用例和是否应回答标记。 |
 | `batch_eval_runs` | 存储 Recall@K、MRR、答案正确率和拒答准确率。 |
 | `batch_eval_results` | 存储批量评测每条用例的明细结果。 |
+| `agent_runs` | 存储 Agent 任务状态、计划、工具轨迹、幂等键、取消和重试关系。 |
 | `audit_logs` | 存储管理员操作审计。 |
 
 ## 核心关系
@@ -27,6 +28,8 @@
 | `users.id` -> `evaluations.user_id` | 单条评测记录关联执行用户。 |
 | `batch_eval_runs.id` -> `batch_eval_results.run_id` | 一次批量评测对应多条明细。 |
 | `evaluation_cases.id` -> `batch_eval_results.case_id` | 批量评测明细可关联原始用例。 |
+| `users.id` -> `agent_runs.user_id` | Agent 任务关联提交用户，用于任务级访问隔离。 |
+| `agent_runs.id` -> `agent_runs.parent_run_id` | 重试任务关联原失败或取消任务。 |
 | `users.id` -> `audit_logs.user_id` | 操作审计关联操作者。 |
 
 ## 关键字段说明
@@ -45,6 +48,10 @@
 | `batch_eval_runs` | `avg_score` | 批量评测平均得分。 |
 | `batch_eval_runs` | `avg_confidence` | 批量评测平均置信度。 |
 | `batch_eval_runs` | `citation_hit_rate` | 批量评测引用命中率。 |
+| `agent_runs` | `status` | 任务状态，包括 queued、running、cancel_requested、cancelled、completed、blocked 和 failed。 |
+| `agent_runs` | `idempotency_key` | 用户级幂等键，避免网络重试导致重复执行。 |
+| `agent_runs` | `tool_calls_json` | Agent 每一步工具输入、输出、状态、重试次数和耗时。 |
+| `agent_runs` | `parent_run_id` | 失败或取消任务重试后的父任务编号。 |
 | `audit_logs` | `detail` | 管理动作详情，使用 JSON 字符串保存。 |
 
 ## 设计特点

@@ -202,8 +202,15 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     error_message TEXT,
     started_at TEXT,
     completed_at TEXT,
+    execution_mode TEXT NOT NULL DEFAULT 'sync',
+    top_k INTEGER NOT NULL DEFAULT 5,
+    idempotency_key TEXT,
+    parent_run_id INTEGER,
+    cancel_requested_at TEXT,
+    updated_at TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY(parent_run_id) REFERENCES agent_runs(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS document_versions (

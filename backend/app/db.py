@@ -65,6 +65,19 @@ def init_db() -> None:
         _ensure_column(conn, "agent_runs", "error_message", "TEXT")
         _ensure_column(conn, "agent_runs", "started_at", "TEXT")
         _ensure_column(conn, "agent_runs", "completed_at", "TEXT")
+        _ensure_column(conn, "agent_runs", "execution_mode", "TEXT NOT NULL DEFAULT 'sync'")
+        _ensure_column(conn, "agent_runs", "top_k", "INTEGER NOT NULL DEFAULT 5")
+        _ensure_column(conn, "agent_runs", "idempotency_key", "TEXT")
+        _ensure_column(conn, "agent_runs", "parent_run_id", "INTEGER")
+        _ensure_column(conn, "agent_runs", "cancel_requested_at", "TEXT")
+        _ensure_column(conn, "agent_runs", "updated_at", "TEXT")
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_runs_user_idempotency
+            ON agent_runs(user_id, idempotency_key)
+            WHERE idempotency_key IS NOT NULL
+            """
+        )
         from .permissions import seed_default_permissions
 
         seed_default_permissions(conn)

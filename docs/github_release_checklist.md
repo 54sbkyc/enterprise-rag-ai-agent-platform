@@ -123,4 +123,4 @@
 
 - 不要把仓库解释成“毕业设计源码”，而是解释为“从毕业设计基础升级出的 AI 应用开发作品集”。
 - 面试时先展示 README 第一屏、首页 AI 运营指标、Agent 工作台和问答可观测轨迹。
-- 如果被问到生产化差距，主动说明当前向量仍在 SQLite、Agent 仍同步执行，后续升级 PostgreSQL + pgvector、独立 rerank、异步任务队列和更细粒度 ACL。
+- 如果被问到生产化差距，主动说明当前向量仍在 SQLite、Agent 使用单实例进程内执行器，后续升级 PostgreSQL + pgvector、独立 rerank、外部任务队列和更细粒度 ACL。

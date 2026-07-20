@@ -107,7 +107,7 @@ def test_repository_has_mit_license_linked_from_public_materials():
     checklist = (ROOT / "docs" / "github_release_checklist.md").read_text(encoding="utf-8")
 
     assert license_text.startswith("MIT License")
-    assert "Copyright (c) 2026 sbkyc" in license_text
+    assert "Copyright (c) 2026 54sbkyc" in license_text
     assert "LICENSE" in readme
     assert "LICENSE" in checklist
 

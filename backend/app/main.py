@@ -1,16 +1,28 @@
 import json
 import os
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .agent import create_agent_run, finish_agent_run, run_agent
+from .agent import (
+    AgentTaskConflictError,
+    AgentTaskLimitError,
+    create_agent_run,
+    create_or_get_agent_task,
+    execute_agent_task,
+    finish_agent_run,
+    recover_interrupted_agent_runs,
+    request_agent_run_cancel,
+    run_agent,
+    runtime_error_result,
+)
 from .auth import (
     MANAGER_ROLES,
     allowed_access_levels,
@@ -21,7 +33,15 @@ from .auth import (
     require_admin,
     require_manager,
 )
-from .config import APP_NAME, APP_VERSION, CORS_ORIGINS, DEFAULT_TOP_K, MAX_UPLOAD_BYTES, UPLOAD_DIR
+from .config import (
+    AGENT_TASK_WORKERS,
+    APP_NAME,
+    APP_VERSION,
+    CORS_ORIGINS,
+    DEFAULT_TOP_K,
+    MAX_UPLOAD_BYTES,
+    UPLOAD_DIR,
+)
 from .db import get_conn, init_db, utc_now
 from .document_parser import SUPPORTED_EXTENSIONS, extract_text
 from .embeddings import build_chunk_index
@@ -51,7 +71,13 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    yield
+    recover_interrupted_agent_runs()
+    executor = ThreadPoolExecutor(max_workers=AGENT_TASK_WORKERS, thread_name_prefix="agent-task")
+    _app.state.agent_executor = executor
+    try:
+        yield
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
 
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
@@ -82,6 +108,14 @@ class AskRequest(BaseModel):
 class AgentRunRequest(BaseModel):
     goal: str = Field(..., min_length=1, max_length=1200)
     top_k: int = Field(default=DEFAULT_TOP_K, ge=1, le=10)
+
+
+class AgentTaskRequest(AgentRunRequest):
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
+
+
+class AgentRetryRequest(BaseModel):
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
 
 
 class EvaluateRequest(BaseModel):
@@ -933,26 +967,58 @@ def ask(
 @app.post("/api/agent/run")
 def agent_run(payload: AgentRunRequest, user: dict = Depends(current_user)) -> dict:
     require_permission(user, "qa.use")
-    run_id = create_agent_run(payload.goal, user)
+    run_id = create_agent_run(payload.goal, user, top_k=payload.top_k)
     try:
         result = run_agent(payload.goal, payload.top_k, user)
     except Exception as exc:
-        result = {
-            "status": "failed",
-            "final_answer": "Agent 运行异常，已记录失败状态。",
-            "tool_calls": [],
-            "plan": {
-                "mode": "runtime_error",
-                "steps": [],
-                "fallback_reason": "unexpected_runtime_error",
-                "requested_model": None,
-            },
-            "error_message": type(exc).__name__,
-        }
+        result = runtime_error_result(exc)
         finish_agent_run(run_id, result)
         raise HTTPException(status_code=500, detail="Agent 运行失败，请查看运行记录") from exc
     finish_agent_run(run_id, result)
     return {"run_id": run_id, **result}
+
+
+@app.post("/api/agent/tasks", status_code=202)
+def create_agent_task(
+    payload: AgentTaskRequest,
+    request: Request,
+    user: dict = Depends(current_user),
+) -> dict:
+    require_permission(user, "qa.use")
+    try:
+        run_id, reused = create_or_get_agent_task(
+            payload.goal,
+            payload.top_k,
+            user,
+            idempotency_key=payload.idempotency_key,
+        )
+    except AgentTaskConflictError as exc:
+        raise HTTPException(status_code=409, detail="幂等键已用于其他任务参数") from exc
+    except AgentTaskLimitError as exc:
+        raise HTTPException(status_code=429, detail="当前运行中的 Agent 任务过多，请稍后再试") from exc
+    if not reused:
+        try:
+            request.app.state.agent_executor.submit(
+                execute_agent_task,
+                run_id,
+                payload.goal,
+                payload.top_k,
+                dict(user),
+            )
+        except RuntimeError as exc:
+            finish_agent_run(run_id, runtime_error_result(exc))
+            raise HTTPException(status_code=503, detail="Agent 任务执行器暂不可用") from exc
+        write_audit(
+            user,
+            "agent_task_queued",
+            "agent_run",
+            run_id,
+            {"top_k": payload.top_k, "idempotent": bool(payload.idempotency_key)},
+        )
+    result = get_agent_run_for_user(run_id, user)
+    result["run_id"] = run_id
+    result["reused"] = reused
+    return result
 
 
 @app.get("/api/agent/runs")
@@ -982,6 +1048,8 @@ def list_agent_runs(
             f"""
             SELECT a.id, a.goal, a.status, a.final_answer, a.tool_calls_json,
                    a.plan_json, a.planner_mode, a.error_message, a.started_at, a.completed_at, a.created_at,
+                   a.execution_mode, a.top_k, a.idempotency_key, a.parent_run_id,
+                   a.cancel_requested_at, a.updated_at,
                    u.username, u.display_name
             FROM agent_runs a
             LEFT JOIN users u ON u.id = a.user_id
@@ -993,11 +1061,68 @@ def list_agent_runs(
         ).fetchall()
     items = []
     for row in rows:
-        item = dict(row)
-        item["tool_calls"] = json.loads(item.pop("tool_calls_json") or "[]")
-        item["plan"] = json.loads(item.pop("plan_json") or "{}")
-        items.append(item)
+        items.append(serialize_agent_run(row))
     return paginated(items, total, page, page_size)
+
+
+@app.get("/api/agent/runs/{run_id}")
+def get_agent_run(run_id: int, user: dict = Depends(current_user)) -> dict:
+    require_permission(user, "qa.use")
+    return get_agent_run_for_user(run_id, user)
+
+
+@app.post("/api/agent/runs/{run_id}/cancel")
+def cancel_agent_run(run_id: int, user: dict = Depends(current_user)) -> dict:
+    require_permission(user, "qa.use")
+    current = get_agent_run_for_user(run_id, user)
+    if current["execution_mode"] != "async":
+        raise HTTPException(status_code=409, detail="同步 Agent 运行不支持取消")
+    status = request_agent_run_cancel(run_id)
+    if status == "cancel_requested" and current["status"] != "cancel_requested":
+        write_audit(user, "agent_task_cancel_requested", "agent_run", run_id, {"previous_status": current["status"]})
+    return get_agent_run_for_user(run_id, user)
+
+
+@app.post("/api/agent/runs/{run_id}/retry", status_code=202)
+def retry_agent_run(
+    run_id: int,
+    payload: AgentRetryRequest,
+    request: Request,
+    user: dict = Depends(current_user),
+) -> dict:
+    require_permission(user, "qa.use")
+    current = get_agent_run_for_user(run_id, user)
+    if current["status"] not in {"failed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="仅失败或已取消的任务可以重试")
+    try:
+        retry_run_id, reused = create_or_get_agent_task(
+            current["goal"],
+            current["top_k"],
+            user,
+            idempotency_key=payload.idempotency_key,
+            parent_run_id=run_id,
+        )
+    except AgentTaskConflictError as exc:
+        raise HTTPException(status_code=409, detail="幂等键已用于其他任务参数") from exc
+    except AgentTaskLimitError as exc:
+        raise HTTPException(status_code=429, detail="当前运行中的 Agent 任务过多，请稍后再试") from exc
+    if not reused:
+        try:
+            request.app.state.agent_executor.submit(
+                execute_agent_task,
+                retry_run_id,
+                current["goal"],
+                current["top_k"],
+                dict(user),
+            )
+        except RuntimeError as exc:
+            finish_agent_run(retry_run_id, runtime_error_result(exc))
+            raise HTTPException(status_code=503, detail="Agent 任务执行器暂不可用") from exc
+        write_audit(user, "agent_task_retried", "agent_run", retry_run_id, {"parent_run_id": run_id})
+    result = get_agent_run_for_user(retry_run_id, user)
+    result["run_id"] = retry_run_id
+    result["reused"] = reused
+    return result
 
 
 def compute_answer(payload: AskRequest, user: dict) -> dict:
@@ -2897,6 +3022,40 @@ def render_health_csv(report: dict) -> str:
             )
         )
     return "\ufeff" + "\n".join(lines)
+
+
+def get_agent_run_for_user(run_id: int, user: dict) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT a.id, a.goal, a.status, a.final_answer, a.user_id,
+                   a.tool_calls_json, a.plan_json, a.planner_mode, a.error_message,
+                   a.started_at, a.completed_at, a.created_at, a.execution_mode,
+                   a.top_k, a.idempotency_key, a.parent_run_id,
+                   a.cancel_requested_at, a.updated_at,
+                   u.username, u.display_name
+            FROM agent_runs a
+            LEFT JOIN users u ON u.id = a.user_id
+            WHERE a.id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+    if not row or (user["role"] not in MANAGER_ROLES and row["user_id"] != user["id"]):
+        raise HTTPException(status_code=404, detail="Agent 运行记录不存在")
+    return serialize_agent_run(row)
+
+
+def serialize_agent_run(row) -> dict:
+    item = dict(row)
+    try:
+        item["tool_calls"] = json.loads(item.pop("tool_calls_json") or "[]")
+    except json.JSONDecodeError:
+        item["tool_calls"] = []
+    try:
+        item["plan"] = json.loads(item.pop("plan_json") or "{}")
+    except json.JSONDecodeError:
+        item["plan"] = {}
+    return item
 
 
 def summarize_ai_usage(raw_items: list[str]) -> dict:

@@ -4,10 +4,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Agent 支持进程内异步任务、持久化状态、幂等提交、协作式取消和失败任务重试。
+- 新增任务详情、取消、重试 API，以及工作台轮询、取消和历史重试交互。
+
 ### Changed
 
 - 将简历项目卡更新为带公开仓库、Release、CI 和量化工程指标的可投递版本。
 - 新增面试前检查、8 分钟演示主线、故障预案和避免过度宣传的检查清单。
+- 仓库、Release、CI 和许可证链接迁移到新账号 `54sbkyc`。
 
 ## [1.1.0] - 2026-07-10
 
@@ -41,4 +47,4 @@
 - Agent 当前同步执行；生产环境仍需异步队列、幂等、取消和人工审批。
 - 关键条件覆盖率是可配置启发式规则，需要用真实业务评测集持续校准。
 
-[1.1.0]: https://github.com/sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0
+[1.1.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0

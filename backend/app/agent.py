@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 from .agent_planner import (
@@ -12,6 +13,7 @@ from .agent_planner import (
     plan_agent,
 )
 from .auth import allowed_access_levels
+from .config import AGENT_TASK_MAX_ACTIVE_PER_USER
 from .db import get_conn, utc_now
 from .permissions import has_permission
 from .qa import build_grounded_answer
@@ -31,7 +33,20 @@ AGENT_TOOL_TIMEOUT_SECONDS = _positive_int_env("AGENT_TOOL_TIMEOUT_SECONDS", 25)
 AGENT_TOOL_MAX_ATTEMPTS = _positive_int_env("AGENT_TOOL_MAX_ATTEMPTS", 2)
 
 
-def run_agent(goal: str, top_k: int, user: dict) -> dict:
+class AgentTaskConflictError(ValueError):
+    pass
+
+
+class AgentTaskLimitError(RuntimeError):
+    pass
+
+
+def run_agent(
+    goal: str,
+    top_k: int,
+    user: dict,
+    cancel_check: Callable[[], bool] | None = None,
+) -> dict:
     normalized_goal = goal.strip()
     plan = plan_agent(
         normalized_goal,
@@ -40,6 +55,8 @@ def run_agent(goal: str, top_k: int, user: dict) -> dict:
     )
     steps = list(plan.steps)
     tool_calls: list[dict] = []
+    if cancellation_requested(cancel_check):
+        return cancelled_result(tool_calls, plan.as_dict())
 
     success, security_result, meta = run_with_retry(lambda: inspect_question(normalized_goal))
     if not success:
@@ -55,6 +72,8 @@ def run_agent(goal: str, top_k: int, user: dict) -> dict:
             meta["duration_ms"],
         )
     )
+    if cancellation_requested(cancel_check):
+        return cancelled_result(tool_calls, plan.as_dict())
     if not security_result.allowed:
         return {
             "status": "blocked",
@@ -80,6 +99,8 @@ def run_agent(goal: str, top_k: int, user: dict) -> dict:
                 meta["duration_ms"],
             )
         )
+        if cancellation_requested(cancel_check):
+            return cancelled_result(tool_calls, plan.as_dict())
         return {
             "status": "completed",
             "final_answer": log_result["answer"],
@@ -114,6 +135,8 @@ def run_agent(goal: str, top_k: int, user: dict) -> dict:
             meta["duration_ms"],
         )
     )
+    if cancellation_requested(cancel_check):
+        return cancelled_result(tool_calls, plan.as_dict())
 
     success, answer_result, meta = run_with_retry(lambda: build_grounded_answer(normalized_goal, hits))
     if not success:
@@ -137,6 +160,8 @@ def run_agent(goal: str, top_k: int, user: dict) -> dict:
             meta["duration_ms"],
         )
     )
+    if cancellation_requested(cancel_check):
+        return cancelled_result(tool_calls, plan.as_dict())
 
     if confidence < 0.16 and TOOL_GAP not in steps:
         steps.append(TOOL_GAP)
@@ -144,6 +169,8 @@ def run_agent(goal: str, top_k: int, user: dict) -> dict:
     if TOOL_GAP in steps:
         gap_call, gap_id = create_gap_if_allowed(normalized_goal, user)
         tool_calls.append(gap_call)
+        if cancellation_requested(cancel_check):
+            return cancelled_result(tool_calls, plan.as_dict())
 
     final_answer = answer
     if gap_id:
@@ -155,6 +182,20 @@ def run_agent(goal: str, top_k: int, user: dict) -> dict:
         "final_answer": final_answer,
         "tool_calls": tool_calls,
         "plan": plan_dict,
+        "error_message": None,
+    }
+
+
+def cancellation_requested(cancel_check: Callable[[], bool] | None) -> bool:
+    return bool(cancel_check and cancel_check())
+
+
+def cancelled_result(calls: list[dict], plan: dict) -> dict:
+    return {
+        "status": "cancelled",
+        "final_answer": "Agent 任务已取消，后续工具调用已停止。",
+        "tool_calls": calls,
+        "plan": plan,
         "error_message": None,
     }
 
@@ -264,41 +305,235 @@ def create_gap_if_allowed(question: str, user: dict) -> tuple[dict, int | None]:
     )
 
 
-def create_agent_run(goal: str, user: dict) -> int:
-    started = utc_now()
+def create_agent_run(
+    goal: str,
+    user: dict,
+    *,
+    status: str = "running",
+    execution_mode: str = "sync",
+    top_k: int = 5,
+    idempotency_key: str | None = None,
+    parent_run_id: int | None = None,
+) -> int:
+    created_at = utc_now()
+    started_at = created_at if status == "running" else None
     with get_conn() as conn:
         return conn.execute(
             """
             INSERT INTO agent_runs(
                 goal, status, final_answer, user_id, tool_calls_json, plan_json,
-                planner_mode, started_at, created_at
+                planner_mode, started_at, execution_mode, top_k, idempotency_key,
+                parent_run_id, updated_at, created_at
             )
-            VALUES (?, 'running', '', ?, '[]', '{}', 'pending', ?, ?)
+            VALUES (?, ?, '', ?, '[]', '{}', 'pending', ?, ?, ?, ?, ?, ?, ?)
             """,
-            (goal.strip(), user["id"], started, started),
+            (
+                goal.strip(),
+                status,
+                user["id"],
+                started_at,
+                execution_mode,
+                top_k,
+                idempotency_key,
+                parent_run_id,
+                created_at,
+                created_at,
+            ),
         ).lastrowid
 
 
 def finish_agent_run(run_id: int, result: dict) -> None:
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        current = conn.execute("SELECT status FROM agent_runs WHERE id = ?", (run_id,)).fetchone()
+        effective_result = result
+        if current and current["status"] == "cancel_requested" and result["status"] != "cancelled":
+            effective_result = cancelled_result(result.get("tool_calls", []), result.get("plan", {}))
+        completed_at = utc_now()
         conn.execute(
             """
             UPDATE agent_runs
             SET status = ?, final_answer = ?, tool_calls_json = ?, plan_json = ?,
-                planner_mode = ?, error_message = ?, completed_at = ?
+                planner_mode = ?, error_message = ?, completed_at = ?, updated_at = ?
             WHERE id = ?
             """,
             (
-                result["status"],
-                result["final_answer"],
-                json.dumps(result["tool_calls"], ensure_ascii=False),
-                json.dumps(result["plan"], ensure_ascii=False),
-                result["plan"]["mode"],
-                result.get("error_message"),
-                utc_now(),
+                effective_result["status"],
+                effective_result["final_answer"],
+                json.dumps(effective_result["tool_calls"], ensure_ascii=False),
+                json.dumps(effective_result["plan"], ensure_ascii=False),
+                effective_result["plan"].get("mode", "unknown"),
+                effective_result.get("error_message"),
+                completed_at,
+                completed_at,
                 run_id,
             ),
         )
+
+
+def create_or_get_agent_task(
+    goal: str,
+    top_k: int,
+    user: dict,
+    *,
+    idempotency_key: str | None = None,
+    parent_run_id: int | None = None,
+) -> tuple[int, bool]:
+    normalized_goal = goal.strip()
+    normalized_key = idempotency_key.strip() if idempotency_key and idempotency_key.strip() else None
+    created_at = utc_now()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if normalized_key:
+            existing = conn.execute(
+                """
+                SELECT id, goal, top_k
+                FROM agent_runs
+                WHERE user_id = ? AND idempotency_key = ?
+                LIMIT 1
+                """,
+                (user["id"], normalized_key),
+            ).fetchone()
+            if existing:
+                if existing["goal"] != normalized_goal or existing["top_k"] != top_k:
+                    raise AgentTaskConflictError("idempotency_key_payload_mismatch")
+                return existing["id"], True
+        active_count = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM agent_runs
+            WHERE user_id = ? AND execution_mode = 'async'
+              AND status IN ('queued', 'running', 'cancel_requested')
+            """,
+            (user["id"],),
+        ).fetchone()["count"]
+        if active_count >= AGENT_TASK_MAX_ACTIVE_PER_USER:
+            raise AgentTaskLimitError("active_task_limit_reached")
+        run_id = conn.execute(
+            """
+            INSERT INTO agent_runs(
+                goal, status, final_answer, user_id, tool_calls_json, plan_json,
+                planner_mode, execution_mode, top_k, idempotency_key,
+                parent_run_id, updated_at, created_at
+            )
+            VALUES (?, 'queued', '', ?, '[]', '{}', 'pending', 'async', ?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_goal,
+                user["id"],
+                top_k,
+                normalized_key,
+                parent_run_id,
+                created_at,
+                created_at,
+            ),
+        ).lastrowid
+    return run_id, False
+
+
+def execute_agent_task(run_id: int, goal: str, top_k: int, user: dict) -> None:
+    if not mark_agent_run_running(run_id):
+        if agent_run_status(run_id) == "cancel_requested":
+            finish_agent_run(run_id, cancelled_result([], pending_plan()))
+        return
+    try:
+        result = run_agent(goal, top_k, user, cancel_check=lambda: is_agent_run_cancel_requested(run_id))
+    except Exception as exc:
+        result = runtime_error_result(exc)
+    finish_agent_run(run_id, result)
+
+
+def mark_agent_run_running(run_id: int) -> bool:
+    started_at = utc_now()
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE agent_runs
+            SET status = 'running', started_at = COALESCE(started_at, ?), updated_at = ?
+            WHERE id = ? AND status = 'queued'
+            """,
+            (started_at, started_at, run_id),
+        )
+    return cursor.rowcount == 1
+
+
+def request_agent_run_cancel(run_id: int) -> str | None:
+    requested_at = utc_now()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT status FROM agent_runs WHERE id = ?", (run_id,)).fetchone()
+        if not row:
+            return None
+        if row["status"] in {"queued", "running"}:
+            conn.execute(
+                """
+                UPDATE agent_runs
+                SET status = 'cancel_requested', cancel_requested_at = ?, updated_at = ?
+                WHERE id = ? AND status IN ('queued', 'running')
+                """,
+                (requested_at, requested_at, run_id),
+            )
+            return "cancel_requested"
+        return row["status"]
+
+
+def is_agent_run_cancel_requested(run_id: int) -> bool:
+    return agent_run_status(run_id) == "cancel_requested"
+
+
+def agent_run_status(run_id: int) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT status FROM agent_runs WHERE id = ?", (run_id,)).fetchone()
+    return row["status"] if row else None
+
+
+def recover_interrupted_agent_runs() -> None:
+    recovered_at = utc_now()
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE agent_runs
+            SET status = 'cancelled', final_answer = 'Agent 任务已取消，后续工具调用已停止。',
+                error_message = NULL, completed_at = ?, updated_at = ?
+            WHERE execution_mode = 'async' AND status = 'cancel_requested'
+            """,
+            (recovered_at, recovered_at),
+        )
+        conn.execute(
+            """
+            UPDATE agent_runs
+            SET status = 'failed', final_answer = '服务重启导致任务中断，可从运行历史重新执行。',
+                planner_mode = 'runtime_error', error_message = 'server_restarted',
+                plan_json = '{"mode":"runtime_error","steps":[],"fallback_reason":"server_restarted","requested_model":null}',
+                completed_at = ?, updated_at = ?
+            WHERE execution_mode = 'async' AND status IN ('queued', 'running')
+            """,
+            (recovered_at, recovered_at),
+        )
+
+
+def runtime_error_result(exc: Exception) -> dict:
+    return {
+        "status": "failed",
+        "final_answer": "Agent 运行异常，已记录失败状态。",
+        "tool_calls": [],
+        "plan": {
+            "mode": "runtime_error",
+            "steps": [],
+            "fallback_reason": "unexpected_runtime_error",
+            "requested_model": None,
+        },
+        "error_message": type(exc).__name__,
+    }
+
+
+def pending_plan() -> dict:
+    return {
+        "mode": "pending",
+        "steps": [],
+        "fallback_reason": None,
+        "requested_model": None,
+    }
 
 
 def persist_agent_run(goal: str, result: dict, user: dict) -> int:

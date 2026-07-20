@@ -24,6 +24,8 @@ const state = {
   sessionHistory: [],
   currentLogId: null,
   selectedDocumentId: null,
+  activeAgentRunId: null,
+  agentPollGeneration: 0,
   route: "dashboard",
   pages: {
     documents: { page: 1, pageSize: 5, total: 0 },
@@ -1535,30 +1537,111 @@ async function runAgentFromWorkspace() {
     setText("#agentRunStatus", "请输入任务目标。");
     return;
   }
+  await submitAgentTask(goal);
+}
+
+async function submitAgentTask(goal) {
   $("#runAgentBtn").disabled = true;
+  $("#cancelAgentBtn").disabled = true;
   $("#agentStatusBadge").className = "badge muted";
-  $("#agentStatusBadge").textContent = "运行中";
-  setText("#agentRunStatus", "正在执行工具调用...");
+  $("#agentStatusBadge").textContent = "提交中";
+  setText("#agentRunStatus", "正在创建持久化任务...");
   setText("#agentRunIdBadge", "未生成");
-  $("#agentFinalAnswer").textContent = "Agent 正在规划并调用工具...";
+  $("#agentFinalAnswer").textContent = "Agent 任务正在进入执行队列...";
   renderAgentToolTimeline([]);
   try {
-    const result = await api("/api/agent/run", {
+    const result = await api("/api/agent/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ goal, top_k: 5 }),
+      body: JSON.stringify({ goal, top_k: 5, idempotency_key: makeAgentIdempotencyKey("run") }),
     });
+    state.activeAgentRunId = result.run_id;
     renderAgentResult(result);
-    setText("#agentRunStatus", `运行完成：#${result.run_id}`);
-    await loadAgentRuns();
+    setText("#agentRunStatus", `任务已提交：#${result.run_id}`);
+    await monitorAgentRun(result.run_id);
   } catch (error) {
     $("#agentStatusBadge").className = "badge danger";
     $("#agentStatusBadge").textContent = "失败";
     $("#agentFinalAnswer").textContent = error.message;
     setText("#agentRunStatus", error.message);
+    state.activeAgentRunId = null;
   } finally {
-    $("#runAgentBtn").disabled = false;
+    updateAgentTaskControls();
   }
+}
+
+async function monitorAgentRun(runId) {
+  const generation = ++state.agentPollGeneration;
+  while (generation === state.agentPollGeneration) {
+    const result = await api(`/api/agent/runs/${runId}`);
+    renderAgentResult(result);
+    if (isAgentTerminal(result.status)) {
+      state.activeAgentRunId = null;
+      setText("#agentRunStatus", `任务${toolStatusLabel(result.status)}：#${runId}`);
+      updateAgentTaskControls();
+      await loadAgentRuns();
+      return result;
+    }
+    setText("#agentRunStatus", `任务${toolStatusLabel(result.status)}：#${runId}`);
+    updateAgentTaskControls();
+    await wait(800);
+  }
+  return null;
+}
+
+async function cancelActiveAgentRun() {
+  const runId = state.activeAgentRunId;
+  if (!runId) return;
+  $("#cancelAgentBtn").disabled = true;
+  try {
+    const result = await api(`/api/agent/runs/${runId}/cancel`, { method: "POST" });
+    renderAgentResult(result);
+    setText("#agentRunStatus", `已请求取消：#${runId}`);
+  } catch (error) {
+    setText("#agentRunStatus", error.message);
+  } finally {
+    updateAgentTaskControls();
+  }
+}
+
+async function retryAgentRun(runId) {
+  if (state.activeAgentRunId) return;
+  $("#runAgentBtn").disabled = true;
+  try {
+    const result = await api(`/api/agent/runs/${runId}/retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ idempotency_key: makeAgentIdempotencyKey(`retry-${runId}`) }),
+    });
+    state.activeAgentRunId = result.run_id;
+    renderAgentResult(result);
+    setText("#agentRunStatus", `已重试为新任务：#${result.run_id}`);
+    await monitorAgentRun(result.run_id);
+  } catch (error) {
+    setText("#agentRunStatus", error.message);
+    state.activeAgentRunId = null;
+  } finally {
+    updateAgentTaskControls();
+  }
+}
+
+function updateAgentTaskControls() {
+  const active = Boolean(state.activeAgentRunId);
+  $("#runAgentBtn").disabled = active;
+  $("#cancelAgentBtn").disabled = !active;
+}
+
+function isAgentTerminal(status) {
+  return ["completed", "blocked", "failed", "cancelled"].includes(status);
+}
+
+function makeAgentIdempotencyKey(prefix) {
+  const suffix = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${suffix}`;
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function loadAgentRuns() {
@@ -1574,12 +1657,15 @@ async function loadAgentRuns() {
 }
 
 function renderAgentResult(result) {
-  $("#agentStatusBadge").className = ["blocked", "failed"].includes(result.status) ? "badge danger" : "badge";
+  const danger = ["blocked", "failed", "cancelled"].includes(result.status);
+  const muted = ["queued", "cancel_requested"].includes(result.status);
+  $("#agentStatusBadge").className = danger ? "badge danger" : muted ? "badge muted" : "badge";
   $("#agentStatusBadge").textContent = toolStatusLabel(result.status);
   setText("#agentRunIdBadge", result.run_id ? `#${result.run_id}` : "历史记录");
-  $("#agentFinalAnswer").textContent = result.final_answer || "Agent 未返回最终回答。";
+  const pendingText = result.status === "queued" ? "任务正在等待可用执行槽位。" : "Agent 正在规划并调用工具...";
+  $("#agentFinalAnswer").textContent = result.final_answer || pendingText;
   const plan = result.plan || {};
-  const plannerLabel = plan.mode === "llm" ? "模型规划" : "确定性规划";
+  const plannerLabel = plan.mode === "llm" ? "模型规划" : plan.mode === "pending" || !plan.mode ? "等待规划" : "确定性规划";
   const fallback = plan.fallback_reason ? ` · 降级原因 ${plan.fallback_reason}` : "";
   setText("#agentPlanSummary", `计划：${plannerLabel} · ${(plan.steps || []).join(" → ") || "未记录"}${fallback}`);
   renderAgentToolTimeline(result.tool_calls || []);
@@ -1622,21 +1708,30 @@ function renderAgentRuns() {
     return;
   }
   list.innerHTML = state.agentRuns
-    .map(
-      (run) => `
+    .map((run) => {
+      const canCancel = ["queued", "running", "cancel_requested"].includes(run.status);
+      const canRetry = ["failed", "cancelled"].includes(run.status);
+      const statusClass = ["blocked", "failed", "cancelled"].includes(run.status)
+        ? "danger"
+        : ["queued", "cancel_requested"].includes(run.status)
+          ? "muted"
+          : "";
+      return `
         <div class="compact-item">
           <div class="panel-title">
             <strong>#${run.id} ${escapeHtml(run.goal)}</strong>
-            <span class="badge ${run.status === "blocked" ? "danger" : ""}">${escapeHtml(toolStatusLabel(run.status))}</span>
+            <span class="badge ${statusClass}">${escapeHtml(toolStatusLabel(run.status))}</span>
           </div>
-          <span>${escapeHtml(run.display_name || run.username || "当前用户")} · ${run.planner_mode === "llm" ? "模型规划" : "确定性规划"} · ${formatDate(run.created_at)} · ${(run.tool_calls || []).length} 步</span>
+          <span>${escapeHtml(run.display_name || run.username || "当前用户")} · ${run.execution_mode === "async" ? "异步任务" : "同步运行"} · ${formatDate(run.created_at)} · ${(run.tool_calls || []).length} 步</span>
           <p class="log-answer-preview">${escapeHtml(run.final_answer || "")}</p>
           <div class="document-actions">
             <button class="ghost-btn small-btn" data-agent-run="${run.id}">查看轨迹</button>
+            ${canCancel ? `<button class="ghost-btn small-btn" data-agent-cancel="${run.id}">取消</button>` : ""}
+            ${canRetry ? `<button class="ghost-btn small-btn" data-agent-retry="${run.id}">重试</button>` : ""}
           </div>
         </div>
-      `,
-    )
+      `;
+    })
     .join("");
 }
 
@@ -1721,6 +1816,10 @@ function formatToolPayload(value) {
 
 function toolStatusLabel(status) {
   return {
+    queued: "排队中",
+    running: "运行中",
+    cancel_requested: "取消中",
+    cancelled: "已取消",
     completed: "完成",
     passed: "通过",
     skipped: "跳过",
@@ -2230,6 +2329,7 @@ function bindEvents() {
   $("#rebuildEmbeddingsBtn").addEventListener("click", rebuildEmbeddings);
   $("#askBtn").addEventListener("click", askQuestion);
   $("#runAgentBtn").addEventListener("click", runAgentFromWorkspace);
+  $("#cancelAgentBtn").addEventListener("click", cancelActiveAgentRun);
   $("#refreshAgentRunsBtn").addEventListener("click", loadAgentRuns);
   $("#copyAnswerBtn").addEventListener("click", copyAnswer);
   $("#clearSessionHistoryBtn").addEventListener("click", clearSessionHistory);
@@ -2357,10 +2457,23 @@ function bindEvents() {
     await createKnowledgeGap(button.dataset.feedbackQuestion, button.dataset.feedbackLog || null);
     await loadQaFeedbacks();
   });
-  $("#agentRunHistory").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-agent-run]");
-    if (!button) return;
-    const run = state.agentRuns.find((item) => String(item.id) === String(button.dataset.agentRun));
+  $("#agentRunHistory").addEventListener("click", async (event) => {
+    const cancelButton = event.target.closest("[data-agent-cancel]");
+    if (cancelButton) {
+      const runId = Number(cancelButton.dataset.agentCancel);
+      state.activeAgentRunId = runId;
+      await cancelActiveAgentRun();
+      await monitorAgentRun(runId);
+      return;
+    }
+    const retryButton = event.target.closest("[data-agent-retry]");
+    if (retryButton) {
+      await retryAgentRun(Number(retryButton.dataset.agentRetry));
+      return;
+    }
+    const viewButton = event.target.closest("[data-agent-run]");
+    if (!viewButton) return;
+    const run = state.agentRuns.find((item) => String(item.id) === String(viewButton.dataset.agentRun));
     if (run) renderAgentResult({ run_id: run.id, ...run });
   });
   $("#healthLowConfidence").addEventListener("click", async (event) => {

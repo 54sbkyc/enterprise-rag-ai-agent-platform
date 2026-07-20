@@ -4,8 +4,8 @@
 
 ## 面试前一天
 
-- 确认 [GitHub Actions](https://github.com/sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml) 为绿色。
-- 确认 [v1.1.0 Release](https://github.com/sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0) 可以打开。
+- 确认 [GitHub Actions](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml) 为绿色。
+- 确认 [v1.1.0 Release](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0) 可以打开。
 - 本地运行 `git status -sb`，确保公开仓库工作区干净。
 - 运行 `\.\scripts\verify_project.ps1`，记录当前 pytest 通过数量。
 - 检查 README 三张截图、架构图和生产化路线图链接。
@@ -28,7 +28,7 @@
 | 3:15-4:15 | 问答：火星差旅问题 | 即使命中差旅制度，核心条件无依据时仍拒答。 |
 | 4:15-5:45 | Agent 工作台 | 受控计划、工具白名单、权限、重试、耗时和状态。 |
 | 5:45-6:45 | 评测中心 | Recall@K、MRR、答案与拒答准确率分开度量。 |
-| 6:45-8:00 | 架构和生产化路线图 | 诚实说明 SQLite、同步 Agent、pgvector 和 ACL 演进。 |
+| 6:45-8:00 | 架构和生产化路线图 | 诚实说明 SQLite、进程内 Agent、外部队列、pgvector 和 ACL 演进。 |
 
 ## 必备问题
 
@@ -56,6 +56,6 @@
 - 不说“已经达到大型企业生产级”。
 - 不把 5 条内置回归集的 100% 指标描述成通用业务准确率。
 - 不把本地抽取式回答说成真实大模型生成。
-- 不回避 SQLite、同步 Agent、启发式覆盖阈值和部门级 ACL 尚未落地。
+- 不回避 SQLite、单实例任务执行器、启发式覆盖阈值和部门级 ACL 尚未落地。
 
 完整讲解台词见 [AI 应用演示脚本](demo_runbook.md)，技术追问见 [面试讲解要点](interview_talking_points.md)。
