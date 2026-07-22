@@ -56,6 +56,7 @@ from .evaluation_gate import (
     summarize_evaluation_results,
 )
 from .evaluation_metrics import evaluate_case_signals
+from .lexical_index import lexical_index_health
 from .observability import build_agent_trace, build_usage_summary
 from .pagination import normalize_pagination, paginated
 from .permissions import (
@@ -261,6 +262,7 @@ def readiness() -> dict:
     try:
         with get_conn() as conn:
             conn.execute("SELECT 1").fetchone()
+            lexical_health = lexical_index_health(conn)
     except Exception:
         raise HTTPException(status_code=503, detail="service is not ready") from None
     vector_health = vector_store_health()
@@ -271,6 +273,7 @@ def readiness() -> dict:
         "version": APP_VERSION,
         "status": "ready",
         "database": "ok",
+        "lexical_index": lexical_health.public_dict(),
         "vector_store": vector_health.public_dict(),
     }
 
@@ -1153,6 +1156,11 @@ def search_preview(q: str, top_k: int = DEFAULT_TOP_K, user: dict = Depends(curr
             "vector_backend": hits[0].vector_backend if hits else "none",
             "vector_degraded": hits[0].vector_degraded if hits else False,
             "vector_error": hits[0].vector_error if hits else None,
+            "lexical_backend": hits[0].lexical_backend if hits else "sqlite_fts5",
+            "lexical_degraded": hits[0].lexical_degraded if hits else False,
+            "lexical_error": hits[0].lexical_error if hits else None,
+            "candidate_count": hits[0].candidate_count if hits else 0,
+            "corpus_count": hits[0].corpus_count if hits else 0,
             "permission_scope": levels,
             "query_terms": hits[0].query_terms if hits else sorted(token_counts(q.strip()).keys())[:20],
             "ranking_rule": "先按权限过滤，以正文 70%、标题 30% 计算字段加权 BM25，再融合可用的向量相似度和本地重排分数。",
@@ -1169,6 +1177,8 @@ def search_preview(q: str, top_k: int = DEFAULT_TOP_K, user: dict = Depends(curr
                 "retrieval_mode": hit.retrieval_mode,
                 "vector_backend": hit.vector_backend,
                 "vector_degraded": hit.vector_degraded,
+                "lexical_backend": hit.lexical_backend,
+                "lexical_degraded": hit.lexical_degraded,
                 "score_breakdown": {
                     "bm25": round(hit.bm25_score, 4),
                     "vector": round(hit.vector_score, 4),

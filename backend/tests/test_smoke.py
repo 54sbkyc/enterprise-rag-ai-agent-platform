@@ -14,6 +14,10 @@ def test_liveness_and_database_readiness_endpoints(client):
     assert ready_response.status_code == 200
     assert ready_response.json()["status"] == "ready"
     assert ready_response.json()["database"] == "ok"
+    assert ready_response.json()["lexical_index"] == {
+        "backend": "sqlite_fts5",
+        "status": "ready",
+    }
     assert ready_response.json()["vector_store"] == {
         "backend": "sqlite",
         "status": "ready",
@@ -63,3 +67,27 @@ def test_readiness_exposes_pgvector_degradation_and_can_require_it(client, monke
     required = client.get("/api/health/ready")
     assert required.status_code == 503
     assert required.json() == {"detail": "service is not ready"}
+
+
+def test_readiness_exposes_lexical_index_degradation(client, monkeypatch):
+    from app import main
+    from app.lexical_index import LexicalSearchResult
+
+    monkeypatch.setattr(
+        main,
+        "lexical_index_health",
+        lambda _conn: LexicalSearchResult(
+            backend="full_scan",
+            status="degraded",
+            error="fts5_unavailable",
+        ),
+    )
+
+    response = client.get("/api/health/ready")
+
+    assert response.status_code == 200
+    assert response.json()["lexical_index"] == {
+        "backend": "full_scan",
+        "status": "degraded",
+        "error": "fts5_unavailable",
+    }

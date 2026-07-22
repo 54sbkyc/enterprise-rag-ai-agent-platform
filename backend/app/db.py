@@ -7,6 +7,7 @@ from typing import Iterator
 
 from .config import DB_PATH
 from .evaluation_dataset import load_evaluation_dataset
+from .lexical_index import ensure_lexical_index, fts_token_text
 
 
 def utc_now() -> str:
@@ -18,6 +19,7 @@ def get_conn() -> Iterator[sqlite3.Connection]:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.create_function("rag_fts_tokens", 1, fts_token_text, deterministic=True)
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
@@ -106,6 +108,12 @@ def init_db() -> None:
             WHERE case_key IS NOT NULL
             """
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_embedding_model ON chunks(embedding_model)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_documents_access_status ON documents(access_level, status)"
+        )
+        ensure_lexical_index(conn)
         from .permissions import seed_default_permissions
 
         seed_default_permissions(conn)

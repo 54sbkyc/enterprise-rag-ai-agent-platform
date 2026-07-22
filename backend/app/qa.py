@@ -188,6 +188,10 @@ def build_citations(hits: list[SearchHit]) -> list[dict]:
             "retrieval_mode": hit.retrieval_mode,
             "vector_backend": hit.vector_backend,
             "vector_degraded": hit.vector_degraded,
+            "lexical_backend": hit.lexical_backend,
+            "lexical_degraded": hit.lexical_degraded,
+            "candidate_count": hit.candidate_count,
+            "corpus_count": hit.corpus_count,
             "score_breakdown": {
                 "bm25": round(hit.bm25_score, 4),
                 "vector": round(hit.vector_score, 4),
