@@ -550,6 +550,8 @@ def serialize_hit(hit) -> dict:
         "chunk_index": hit.chunk_index,
         "score": round(hit.score, 4),
         "retrieval_mode": hit.retrieval_mode,
+        "vector_backend": hit.vector_backend,
+        "vector_degraded": hit.vector_degraded,
         "bm25_score": round(hit.bm25_score, 4),
         "vector_score": round(hit.vector_score, 4),
         "rerank_score": round(hit.rerank_score, 4),

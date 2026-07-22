@@ -35,6 +35,8 @@ Invoke-RestMethod http://127.0.0.1:8000/api/health/ready
 
 返回 `status: ready` 和 `database: ok` 后，访问 `http://127.0.0.1:8000`，使用 `.env` 中配置的管理员账号登录。生产模式不会创建 `employee / user123` 演示账号，普通用户应由管理员创建。
 
+默认 Compose 继续使用 SQLite JSON 向量。需要 PostgreSQL + pgvector HNSW 检索时，使用 `compose.pgvector.yaml` 叠加启动，详见 [pgvector 检索后端](pgvector_retrieval.md)。
+
 ## 3. 运行与排障
 
 ```powershell

@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from .db import get_conn
 from .embeddings import embed_query
 from .text_processing import token_counts, tokenize
+from .vector_store import (
+    VectorStoreConfigurationError,
+    query_chunk_vectors,
+    vector_store_backend,
+    vector_store_fallback_enabled,
+)
 
 
 BM25_K1 = 1.5
@@ -31,6 +37,9 @@ class SearchHit:
     vector_score: float = 0.0
     rerank_score: float = 0.0
     retrieval_mode: str = "bm25"
+    vector_backend: str = "none"
+    vector_degraded: bool = False
+    vector_error: str | None = None
 
 
 def search_chunks(question: str, top_k: int, access_levels: list[str] | None = None) -> list[SearchHit]:
@@ -63,16 +72,15 @@ def search_chunks(question: str, top_k: int, access_levels: list[str] | None = N
         for content_score, title_score in zip(content_bm25, title_bm25)
     ]
 
-    embeddings = [_json_vector(row["embedding_json"]) for row in rows]
-    embedding_models = Counter(
-        row["embedding_model"] for row, vector in zip(rows, embeddings) if row["embedding_model"] and vector
-    )
+    embedding_models = Counter(row["embedding_model"] for row in rows if row["embedding_model"])
     embedding_model = embedding_models.most_common(1)[0][0] if embedding_models else None
     query_embedding = embed_query(question, embedding_model) if embedding_model else None
-    vector_raw = [
-        max(0.0, _dense_cosine(query_embedding, vector)) if query_embedding and vector else 0.0
-        for vector in embeddings
-    ]
+    vector_raw, vector_backend, vector_degraded, vector_error = _vector_scores(
+        rows,
+        query_embedding,
+        embedding_model,
+        top_k,
+    )
     vector_normalized = _normalize_positive(vector_raw)
     hybrid_active = bool(query_embedding and any(vector_normalized))
 
@@ -108,10 +116,51 @@ def search_chunks(question: str, top_k: int, access_levels: list[str] | None = N
                 vector_score=round(vector_raw[index], 6),
                 rerank_score=round(rerank_score, 6),
                 retrieval_mode=retrieval_mode,
+                vector_backend=vector_backend,
+                vector_degraded=vector_degraded,
+                vector_error=vector_error,
             )
         )
 
     return sorted(ranked, key=lambda item: (item.score, item.bm25_score, item.vector_score), reverse=True)[:top_k]
+
+
+def _vector_scores(rows, query_embedding, embedding_model, top_k: int) -> tuple[list[float], str, bool, str | None]:
+    if not query_embedding or not embedding_model:
+        return [0.0 for _ in rows], "none", False, None
+
+    try:
+        backend = vector_store_backend()
+    except VectorStoreConfigurationError as exc:
+        backend = "invalid"
+        configuration_error = str(exc)
+    else:
+        configuration_error = None
+
+    if backend == "pgvector":
+        result = query_chunk_vectors(
+            query_embedding,
+            embedding_model,
+            [int(row["id"]) for row in rows],
+            min(len(rows), max(50, top_k * 8)),
+        )
+        if result.status == "ready":
+            return [result.scores.get(int(row["id"]), 0.0) for row in rows], "pgvector", False, None
+        if not vector_store_fallback_enabled():
+            return [0.0 for _ in rows], "pgvector", True, result.error
+        configuration_error = result.error
+        backend = "sqlite_fallback"
+    elif backend == "invalid" and not vector_store_fallback_enabled():
+        return [0.0 for _ in rows], "invalid", True, configuration_error
+
+    embeddings = [_json_vector(row["embedding_json"]) for row in rows]
+    scores = [
+        max(0.0, _dense_cosine(query_embedding, vector)) if vector else 0.0
+        for vector in embeddings
+    ]
+    degraded = backend in {"invalid", "sqlite_fallback"}
+    public_backend = "sqlite_json" if backend == "sqlite" else backend
+    return scores, public_backend, degraded, configuration_error
 
 
 def has_restricted_topic_match(question: str, access_levels: list[str]) -> bool:

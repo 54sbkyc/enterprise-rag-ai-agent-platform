@@ -84,6 +84,8 @@ def test_vector_recall_finds_semantic_match_without_lexical_overlap(monkeypatch)
     assert hits
     assert hits[0].document_title == "差旅制度"
     assert hits[0].retrieval_mode == "hybrid"
+    assert hits[0].vector_backend == "sqlite_json"
+    assert hits[0].vector_degraded is False
     assert hits[0].vector_score == 1.0
     assert all(hit.document_title != "设备制度" for hit in hits)
 

@@ -1,0 +1,31 @@
+name: enterprise-rag-ai-agent-platform
+
+services:
+  app:
+    environment:
+      RAG_VECTOR_STORE: pgvector
+      PGVECTOR_DSN: "postgresql://rag:${PGVECTOR_PASSWORD:?Set PGVECTOR_PASSWORD in .env}@pgvector:5432/rag_vectors"
+      PGVECTOR_DIMENSIONS: "${PGVECTOR_DIMENSIONS:-1536}"
+    depends_on:
+      pgvector:
+        condition: service_healthy
+
+  pgvector:
+    image: pgvector/pgvector:0.8.2-pg17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rag_vectors
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: "${PGVECTOR_PASSWORD:?Set PGVECTOR_PASSWORD in .env}"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag_vectors"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  pgvector_data:

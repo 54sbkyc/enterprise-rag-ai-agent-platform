@@ -16,6 +16,8 @@ TEST_ROOT = Path(tempfile.mkdtemp(prefix="enterprise-rag-tests-"))
 os.environ["RAG_DB_PATH"] = str(TEST_ROOT / "test.db")
 os.environ["RAG_UPLOAD_DIR"] = str(TEST_ROOT / "uploads")
 os.environ["RAG_RUNTIME_ENV"] = "test"
+os.environ["RAG_VECTOR_STORE"] = "sqlite"
+os.environ["RAG_VECTOR_STORE_FALLBACK"] = "true"
 
 from app.auth import hash_password  # noqa: E402
 from app.db import get_conn, init_db, utc_now  # noqa: E402

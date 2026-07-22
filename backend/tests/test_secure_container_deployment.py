@@ -114,3 +114,32 @@ def test_container_deployment_is_documented_and_ci_smoke_tested():
     assert "docker compose config --quiet" in workflow
     assert "docker build" in workflow
     assert "/api/health/ready" in workflow
+
+
+def test_pgvector_profile_and_ci_use_a_real_extension_image():
+    compose = (ROOT / "compose.pgvector.yaml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+
+    for contract in (
+        "pgvector/pgvector:0.8.2-pg17-bookworm",
+        "RAG_VECTOR_STORE: pgvector",
+        "PGVECTOR_DSN:",
+        "condition: service_healthy",
+        "pgvector_data:/var/lib/postgresql/data",
+    ):
+        assert contract in compose
+    assert "pgvector-integration:" in workflow
+    assert "tests/test_pgvector_integration.py" in workflow
+    assert "PGVECTOR_TEST_DSN" in workflow
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs" / "pgvector_retrieval.md").read_text(encoding="utf-8")
+    assert "docs/pgvector_retrieval.md" in readme
+    for contract in (
+        "compose.pgvector.yaml",
+        "/api/documents/vector-store/sync",
+        "RAG_VECTOR_STORE_FALLBACK",
+        "SQLite 与 pgvector 无法共享事务",
+        "PGVECTOR_DIMENSIONS",
+    ):
+        assert contract in guide

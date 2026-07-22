@@ -18,6 +18,7 @@
 | [AI 应用演示脚本](docs/demo_runbook.md) | 按 8 分钟主线展示 RAG、Agent、安全、评测和工程交付。 |
 | [面试演示检查清单](docs/interview_demo_checklist.md) | 面试前一天和前五分钟的环境、主线与故障预案检查。 |
 | [Docker 安全部署](docs/container_deployment.md) | 使用非 root 容器、持久卷、就绪检查和生产管理员引导完成可复现部署。 |
+| [pgvector 检索后端](docs/pgvector_retrieval.md) | 启用真实 HNSW 向量检索、连接池、历史索引对账、透明降级和 CI 数据库验证。 |
 | [生产化路线图](docs/production_roadmap.md) | 说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent 和 ACL 升级路径。 |
 | [最终验收报告](docs/final_acceptance_report.md) | 说明发布前验收、工程完整度和诚实边界。 |
 | [v1.3.0 版本说明](docs/releases/v1.3.0.md) | 查看安全容器交付、生产账号引导、就绪检查和 CI 实跑结果。 |
@@ -42,7 +43,7 @@
 
 | 能力 | 项目体现 |
 | --- | --- |
-| RAG 应用落地 | 文档解析、切分、标题/正文字段加权 BM25、可选 Embedding、融合重排、Top-K 引用回答 |
+| RAG 应用落地 | 文档解析、切分、标题/正文字段加权 BM25、可选 SQLite/pgvector 向量后端、融合重排、Top-K 引用回答 |
 | AI Agent 工程 | 受控模型规划、工具白名单、进程内异步任务、幂等提交、取消重试和调用轨迹 |
 | 可观测性 | 每次问答返回决策轨迹、token 估算、成本估算；首页汇总 AI 运营指标 |
 | 质量评测 | 12 条角色化黄金用例，支持 Recall@K、MRR、答案正确率、拒答准确率、访问控制准确率和报告导出 |
@@ -55,7 +56,8 @@
 ## 核心功能
 
 - 文档管理：支持 TXT、Markdown、PDF、DOCX 上传，自动解析、切分、索引和版本记录。
-- 混合检索：默认使用正文 70%、标题 30% 的字段加权 BM25 + 本地重排；配置 Embedding 后自动融合语义向量召回，并可为历史文档批量补建向量。
+- 混合检索：默认使用正文 70%、标题 30% 的字段加权 BM25 + 本地重排；配置 Embedding 后自动融合语义向量召回，并可选择零服务 SQLite JSON 或带 HNSW 与连接池的 pgvector 后端。
+- 向量索引治理：上传、重建、重索引和删除自动同步外部向量，历史索引可通过管理接口对账；故障时按配置降级或阻止就绪，并显式返回实际向量后端。
 - 依据覆盖闸门：回答前检查问题关键条件是否出现在 Top-K 依据中，覆盖不足时保守拒答，并在决策轨迹中展示覆盖率和缺失词。
 - 权限控制：内置管理员、技术员工与普通员工角色，后端接口、检索范围和前端页面都按权限收敛；低权限用户命中受限文档主题时只返回通用拒答，不暴露标题或正文。
 - RAG 问答：基于可访问文档检索片段，返回有依据的回答和引用来源。
@@ -74,7 +76,7 @@
 | --- | --- |
 | 后端 | Python, FastAPI, Pydantic, SQLite |
 | 文档解析 | PyMuPDF, python-docx |
-| 检索 | jieba 分词, 字段加权 BM25, OpenAI 兼容 Embedding, 融合重排 |
+| 检索 | jieba 分词, 字段加权 BM25, OpenAI 兼容 Embedding, pgvector HNSW, 融合重排 |
 | AI 接入 | 本地抽取式回答，兼容 OpenAI Chat Completions 协议 |
 | 前端 | HTML, CSS, JavaScript |
 | 测试 | pytest, FastAPI TestClient, Playwright 浏览器验证 |
@@ -96,6 +98,8 @@ flowchart LR
     API --> Audit["审计日志"]
     Docs --> DB["SQLite"]
     Search --> DB
+    Docs -. "可选向量同步" .-> PG["PostgreSQL + pgvector"]
+    Search -. "可选 HNSW Top-K" .-> PG
     QA --> Search
     Agent --> Search
     Agent --> DB
@@ -157,6 +161,8 @@ Invoke-RestMethod http://127.0.0.1:8000/api/health/ready
 ```
 
 容器默认只绑定 `127.0.0.1`，使用非 root 用户、只读根文件系统和命名数据卷。完整的密码规则、运行命令、日志、备份步骤与单实例边界见 [Docker 安全部署指南](docs/container_deployment.md)。
+
+需要真实向量索引时，使用 `compose.pgvector.yaml` 叠加启动；配置、历史向量对账、故障语义和架构边界见 [pgvector 检索后端](docs/pgvector_retrieval.md)。
 
 ## 大模型配置
 
@@ -267,7 +273,7 @@ enterprise-rag-qa
 
 ## 可以继续生产化的方向
 
-- 将当前 SQLite 中的向量 JSON 迁移到 pgvector 或专用向量数据库，避免大规模语料全量扫描。
+- 继续把本地 BM25 升级为 PostgreSQL 全文检索或独立检索服务，避免大规模语料的关键词通道全量计算。
 - 将本地融合重排升级为独立 rerank 模型，并建立线上难例集。
 - 将 SQLite 替换为 PostgreSQL，并加入迁移工具。
 - 接入真实 SSO、部门 ACL 和更细粒度的文档权限。

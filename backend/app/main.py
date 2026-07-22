@@ -72,6 +72,16 @@ from .qa import build_grounded_answer, build_restricted_access_refusal
 from .search import has_restricted_topic_match, search_chunks
 from .security import inspect_question
 from .text_processing import chunk_text, token_counts
+from .vector_store import (
+    ChunkVector,
+    VectorStoreConfigurationError,
+    close_vector_store_pool,
+    delete_document_vectors,
+    sync_chunk_vectors,
+    vector_store_fallback_enabled,
+    vector_store_backend,
+    vector_store_health,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -88,6 +98,7 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         executor.shutdown(wait=True, cancel_futures=True)
+        close_vector_store_pool()
 
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
@@ -172,6 +183,10 @@ class EmbeddingRebuildRequest(BaseModel):
     force: bool = False
 
 
+class VectorStoreSyncRequest(BaseModel):
+    document_ids: list[int] | None = None
+
+
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
@@ -248,11 +263,15 @@ def readiness() -> dict:
             conn.execute("SELECT 1").fetchone()
     except Exception:
         raise HTTPException(status_code=503, detail="service is not ready") from None
+    vector_health = vector_store_health()
+    if vector_health.status == "degraded" and not vector_store_fallback_enabled():
+        raise HTTPException(status_code=503, detail="service is not ready")
     return {
         "name": APP_NAME,
         "version": APP_VERSION,
         "status": "ready",
         "database": "ok",
+        "vector_store": vector_health.public_dict(),
     }
 
 
@@ -499,6 +518,7 @@ def upload_document(
 
     chunk_index = build_chunk_index(chunks)
 
+    vector_items: list[ChunkVector] = []
     with get_conn() as conn:
         cursor = conn.execute(
             """
@@ -520,7 +540,7 @@ def upload_document(
         )
         doc_id = cursor.lastrowid
         for index, item in enumerate(chunk_index.items):
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT INTO chunks(
                     document_id, chunk_index, content, token_json,
@@ -539,6 +559,16 @@ def upload_document(
                     created,
                 ),
             )
+            if item.embedding and chunk_index.model:
+                vector_items.append(
+                    ChunkVector(
+                        chunk_id=cursor.lastrowid,
+                        document_id=doc_id,
+                        embedding_model=chunk_index.model,
+                        content_hash=item.content_hash,
+                        embedding=item.embedding,
+                    )
+                )
         conn.execute(
             "UPDATE documents SET storage_path = ?, status = 'ready', chunk_count = ? WHERE id = ?",
             (str(storage_path), len(chunks), doc_id),
@@ -551,12 +581,19 @@ def upload_document(
             (doc_id, Path(safe_name).stem, access_level, len(chunks), user["id"], created),
         )
 
+    vector_result = sync_chunk_vectors(vector_items)
+
     write_audit(
         user,
         "upload_document",
         "document",
         doc_id,
-        {"filename": safe_name, "access_level": access_level, "chunk_count": len(chunks)},
+        {
+            "filename": safe_name,
+            "access_level": access_level,
+            "chunk_count": len(chunks),
+            "vector_store": vector_result.public_dict(),
+        },
     )
     return {
         "id": doc_id,
@@ -566,6 +603,7 @@ def upload_document(
         "status": "ready",
         "embedding_status": chunk_index.status,
         "embedding_model": chunk_index.model,
+        "vector_store": vector_result.public_dict(),
     }
 
 
@@ -672,8 +710,28 @@ def rebuild_document_embeddings(
                 "UPDATE documents SET embedding_status = 'ready', embedding_model = ? WHERE id = ?",
                 (chunk_index.model, document["id"]),
             )
+        vector_result = sync_chunk_vectors(
+            [
+                ChunkVector(
+                    chunk_id=row["id"],
+                    document_id=document["id"],
+                    embedding_model=chunk_index.model,
+                    content_hash=item.content_hash,
+                    embedding=item.embedding,
+                )
+                for row, item in zip(rows, chunk_index.items)
+                if item.embedding and chunk_index.model
+            ]
+        )
         indexed += 1
-        details.append({"document_id": document["id"], "status": "ready", "chunks": len(rows)})
+        details.append(
+            {
+                "document_id": document["id"],
+                "status": "ready",
+                "chunks": len(rows),
+                "vector_store": vector_result.public_dict(),
+            }
+        )
 
     summary = {
         "model": model,
@@ -685,6 +743,98 @@ def rebuild_document_embeddings(
     }
     write_audit(user, "rebuild_embeddings", "document_index", None, summary)
     return summary
+
+
+@app.post("/api/documents/vector-store/sync")
+def sync_document_vector_store(
+    payload: VectorStoreSyncRequest,
+    user: dict = Depends(current_user),
+) -> dict:
+    require_permission(user, "documents.manage")
+    try:
+        if vector_store_backend() != "pgvector":
+            raise HTTPException(status_code=400, detail="RAG_VECTOR_STORE must be pgvector")
+    except VectorStoreConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    where = ["d.status = 'ready'"]
+    values: list[object] = []
+    if payload.document_ids:
+        placeholders = ",".join("?" for _ in payload.document_ids)
+        where.append(f"d.id IN ({placeholders})")
+        values.extend(payload.document_ids)
+    with get_conn() as conn:
+        documents = conn.execute(
+            f"SELECT d.id FROM documents d WHERE {' AND '.join(where)} ORDER BY d.id",
+            values,
+        ).fetchall()
+
+    indexed_documents = failed_documents = indexed_chunks = skipped_chunks = 0
+    details = []
+    for document in documents:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, embedding_json, embedding_model, content_hash
+                FROM chunks
+                WHERE document_id = ?
+                ORDER BY id
+                """,
+                (document["id"],),
+            ).fetchall()
+        items = []
+        for row in rows:
+            embedding = _decode_embedding(row["embedding_json"])
+            if not embedding or not row["embedding_model"]:
+                skipped_chunks += 1
+                continue
+            items.append(
+                ChunkVector(
+                    chunk_id=row["id"],
+                    document_id=document["id"],
+                    embedding_model=row["embedding_model"],
+                    content_hash=row["content_hash"],
+                    embedding=embedding,
+                )
+            )
+        cleanup_result = delete_document_vectors(document["id"])
+        sync_result = sync_chunk_vectors(items)
+        if cleanup_result.status == "ready" and sync_result.status == "ready":
+            indexed_documents += 1
+            indexed_chunks += sync_result.count
+            status = "ready"
+        else:
+            failed_documents += 1
+            status = "degraded"
+        details.append(
+            {
+                "document_id": document["id"],
+                "status": status,
+                "chunks": len(items),
+                "cleanup": cleanup_result.public_dict(),
+                "sync": sync_result.public_dict(),
+            }
+        )
+
+    summary = {
+        "backend": "pgvector",
+        "documents": len(documents),
+        "indexed_documents": indexed_documents,
+        "failed_documents": failed_documents,
+        "indexed_chunks": indexed_chunks,
+        "skipped_chunks": skipped_chunks,
+        "details": details,
+    }
+    write_audit(user, "sync_vector_store", "document_index", None, summary)
+    return summary
+
+
+def _decode_embedding(raw: str | None) -> list[float]:
+    try:
+        value = json.loads(raw or "[]")
+        return [float(item) for item in value] if isinstance(value, list) else []
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return []
 
 
 @app.get("/api/documents")
@@ -887,10 +1037,11 @@ def reindex_document(document_id: int, user: dict = Depends(current_user)) -> di
     chunk_index = build_chunk_index(chunks)
 
     created = utc_now()
+    vector_items: list[ChunkVector] = []
     with get_conn() as conn:
         conn.execute("DELETE FROM chunks WHERE document_id = ?", (document_id,))
         for index, item in enumerate(chunk_index.items):
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT INTO chunks(
                     document_id, chunk_index, content, token_json,
@@ -909,6 +1060,16 @@ def reindex_document(document_id: int, user: dict = Depends(current_user)) -> di
                     created,
                 ),
             )
+            if item.embedding and chunk_index.model:
+                vector_items.append(
+                    ChunkVector(
+                        chunk_id=cursor.lastrowid,
+                        document_id=document_id,
+                        embedding_model=chunk_index.model,
+                        content_hash=item.content_hash,
+                        embedding=item.embedding,
+                    )
+                )
         conn.execute(
             """
             UPDATE documents
@@ -927,7 +1088,20 @@ def reindex_document(document_id: int, user: dict = Depends(current_user)) -> di
             (document_id, new_version, document["title"], document["access_level"], len(chunks), user["id"], created),
         )
 
-    write_audit(user, "reindex_document", "document", document_id, {"chunk_count": len(chunks)})
+    cleanup_result = delete_document_vectors(document_id)
+    vector_result = sync_chunk_vectors(vector_items)
+
+    write_audit(
+        user,
+        "reindex_document",
+        "document",
+        document_id,
+        {
+            "chunk_count": len(chunks),
+            "vector_cleanup": cleanup_result.public_dict(),
+            "vector_store": vector_result.public_dict(),
+        },
+    )
     return {
         "id": document_id,
         "chunk_count": len(chunks),
@@ -935,6 +1109,8 @@ def reindex_document(document_id: int, user: dict = Depends(current_user)) -> di
         "version": new_version,
         "embedding_status": chunk_index.status,
         "embedding_model": chunk_index.model,
+        "vector_cleanup": cleanup_result.public_dict(),
+        "vector_store": vector_result.public_dict(),
     }
 
 
@@ -947,10 +1123,17 @@ def delete_document(document_id: int, user: dict = Depends(current_user)) -> dic
             raise HTTPException(status_code=404, detail="文档不存在")
         conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
 
+    vector_result = delete_document_vectors(document_id)
     path = Path(row["storage_path"])
     path.unlink(missing_ok=True)
-    write_audit(user, "delete_document", "document", document_id, {"storage_path": row["storage_path"]})
-    return {"deleted": True}
+    write_audit(
+        user,
+        "delete_document",
+        "document",
+        document_id,
+        {"storage_path": row["storage_path"], "vector_store": vector_result.public_dict()},
+    )
+    return {"deleted": True, "vector_store": vector_result.public_dict()}
 
 
 @app.get("/api/search")
@@ -967,6 +1150,9 @@ def search_preview(q: str, top_k: int = DEFAULT_TOP_K, user: dict = Depends(curr
         "explanation": {
             "algorithm": "字段加权 BM25 + 向量召回 + 本地重排" if retrieval_mode == "hybrid" else "字段加权 BM25 + 本地重排",
             "retrieval_mode": retrieval_mode,
+            "vector_backend": hits[0].vector_backend if hits else "none",
+            "vector_degraded": hits[0].vector_degraded if hits else False,
+            "vector_error": hits[0].vector_error if hits else None,
             "permission_scope": levels,
             "query_terms": hits[0].query_terms if hits else sorted(token_counts(q.strip()).keys())[:20],
             "ranking_rule": "先按权限过滤，以正文 70%、标题 30% 计算字段加权 BM25，再融合可用的向量相似度和本地重排分数。",
@@ -981,6 +1167,8 @@ def search_preview(q: str, top_k: int = DEFAULT_TOP_K, user: dict = Depends(curr
                 "chunk_index": hit.chunk_index,
                 "score": round(hit.score, 4),
                 "retrieval_mode": hit.retrieval_mode,
+                "vector_backend": hit.vector_backend,
+                "vector_degraded": hit.vector_degraded,
                 "score_breakdown": {
                     "bm25": round(hit.bm25_score, 4),
                     "vector": round(hit.vector_score, 4),

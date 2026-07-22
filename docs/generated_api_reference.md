@@ -26,6 +26,7 @@
 | --- | --- | --- | --- |
 | POST | `/api/documents/upload` | 管理员/技术员工 | 上传并解析文档，生成知识片段。 |
 | POST | `/api/documents/embeddings/rebuild` | 管理员/技术员工 | 为历史文档批量补建或更新向量索引。 |
+| POST | `/api/documents/vector-store/sync` | 管理员/技术员工 | 将 SQLite 中已有向量与 pgvector 检索投影对账，不重复调用 Embedding 服务。 |
 | GET | `/api/documents` | 管理员/技术员工 | 查询可见文档，支持关键词、密级、类型和排序筛选。 |
 | GET | `/api/documents/{document_id}/chunks` | 管理员/技术员工 | 查看指定文档的知识片段。 |
 | GET | `/api/documents/{document_id}/versions` | 管理员/技术员工 | 查看文档版本历史，包含版本号、操作类型、密级、片段数和操作者。 |
