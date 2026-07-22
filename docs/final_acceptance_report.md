@@ -10,6 +10,7 @@
 - 面试讲解：[interview_talking_points.md](interview_talking_points.md)
 - AI 应用演示脚本：[demo_runbook.md](demo_runbook.md)
 - Docker 安全部署：[container_deployment.md](container_deployment.md)
+- pgvector 检索后端：[pgvector_retrieval.md](pgvector_retrieval.md)
 - 生产化路线图：[production_roadmap.md](production_roadmap.md)
 - GitHub 发布清单：[github_release_checklist.md](github_release_checklist.md)
 - 安全说明：[../SECURITY.md](../SECURITY.md)
@@ -39,6 +40,7 @@ GitHub 发布版需要包含 `docs/resume_project_card.md` 和 `docs/portfolio_r
 | 文档入库 | 已完成 | 支持 TXT、Markdown、PDF、DOCX 解析、切分、索引和版本记录。 |
 | 权限控制 | 已完成 | 管理员、技术员工和普通员工角色分离，后端接口和检索范围按权限收敛；受限主题对低权限用户保守拒答。 |
 | RAG 问答 | 已完成 | 支持 BM25、可选 Embedding、融合重排、权限过滤、引用回答和关键条件覆盖拒答。 |
+| 向量检索基础设施 | 已完成 | 支持 SQLite JSON 零服务模式与 pgvector HNSW 模式，包含连接池、实时允许 ID 过滤、历史对账和透明降级。 |
 | 安全拦截 | 已完成 | 支持 Prompt 注入拦截、敏感信息脱敏和审计记录。 |
 | 运行时防护 | 已完成 | 支持会话过期、上传限额、跨域白名单、生产强密码引导、数据库就绪检查和模型降级透明标记。 |
 | AI Agent | 已完成 | 支持受控规划、工具白名单、进程内异步执行、权限检查、幂等提交、协作式取消、失败重试和生命周期持久化。 |
@@ -58,7 +60,7 @@ GitHub 发布版需要包含 `docs/resume_project_card.md` 和 `docs/portfolio_r
 | AI 回归门禁 | 已完成 | 隔离数据库执行版本化黄金集，检查绝对阈值与批准/历史基线回退，失败时阻止 CI。 |
 | 环境一致性 | 已完成 | 逐项验证锁定依赖存在且版本一致，再执行依赖冲突检查。 |
 | 容器交付 | 已完成 | 非 root 单 Worker 镜像、只读根文件系统、持久卷和 Compose 安全默认项可在干净机器复现。 |
-| CI | 已完成 | GitHub Actions 同时运行 136 项测试、RAG 门禁和容器构建/登录/重启烟测。 |
+| CI | 已完成 | GitHub Actions 运行 143 项 pytest、2 项真实 pgvector PostgreSQL 集成测试、RAG 门禁和容器构建/登录/重启烟测。 |
 | 发布治理 | 已完成 | `.gitignore`、发布清单和检查脚本隔离本地数据库、上传文件、缓存、Word 文档和隧道工具。 |
 | 密钥防泄漏 | 已完成 | 发布检查会扫描公开源码和文档中的常见疑似密钥格式。 |
 | 文档完整性 | 已完成 | README、面试文档、生产化路线图、发布清单和本报告形成完整说明链路。 |
@@ -98,7 +100,7 @@ git status --ignored
 
 面试中可以主动说明当前版本的取舍：
 
-- 检索层已支持 BM25 + 可选 Embedding 混合召回和本地重排；生产环境需将向量迁移到 pgvector 并接入独立 rerank 模型。
+- 检索层已支持 BM25 + 可选 SQLite/pgvector 向量召回和本地重排；pgvector 使用 HNSW、连接池和实时允许片段 ID 过滤。生产环境仍需迁移业务表与关键词检索，并接入独立 rerank 模型。
 - 本地回答已增加关键条件覆盖率闸门，能拒绝“召回相似资料但核心条件无依据”的问题；该启发式阈值仍需用真实业务评测集持续校准。
 - 数据库当前使用 SQLite，适合轻量演示；生产环境建议迁移到 PostgreSQL。
 - Agent 已有进程内异步执行、幂等、协作式取消、重试和持久化状态；生产环境仍需外部队列、任务租约、跨实例恢复、供应商级取消、人工审批和更细粒度 ACL。
@@ -112,5 +114,5 @@ git status --ignored
 可以这样介绍：
 
 ```text
-这个项目是我在毕业设计基础上继续升级出的 AI 应用开发作品集。它不是简单 ChatGPT 套壳，而是围绕企业知识库问答做了文档入库、权限过滤、RAG 检索、引用溯源、Agent 工具调用、安全审计、质量评测和 AI 可观测。为了让项目可以复现和交付，我还补了 136 项自动化测试、RAG 质量门禁、非 root 容器、容器 CI 实跑、发布清单和最终验收报告。
+这个项目是我在毕业设计基础上继续升级出的 AI 应用开发作品集。它不是简单 ChatGPT 套壳，而是围绕企业知识库问答做了文档入库、权限过滤、RAG 检索、引用溯源、Agent 工具调用、安全审计、质量评测和 AI 可观测。为了让项目可以复现和交付，我还补了 143 项自动化测试、2 项真实 pgvector PostgreSQL 集成测试、RAG 质量门禁、非 root 容器、容器 CI 实跑、发布清单和最终验收报告。
 ```

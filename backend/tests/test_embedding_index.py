@@ -2,6 +2,7 @@ import json
 
 from app import embeddings, main
 from app.db import get_conn
+from app.vector_store import VectorStoreResult
 
 
 def test_embedding_is_disabled_without_explicit_model(monkeypatch):
@@ -38,6 +39,7 @@ def test_embedding_batch_is_attached_to_chunk_index(monkeypatch):
 
 def test_document_upload_persists_embedding_index_status(client, admin_headers, monkeypatch):
     real_builder = embeddings.build_chunk_index
+    synced = []
 
     def fake_builder(chunks, model=None):
         base = real_builder(chunks, model=None)
@@ -53,6 +55,12 @@ def test_document_upload_persists_embedding_index_status(client, admin_headers, 
         return embeddings.ChunkIndex(status="ready", model="demo-embedding", items=items)
 
     monkeypatch.setattr(main, "build_chunk_index", fake_builder)
+    monkeypatch.setattr(
+        main,
+        "sync_chunk_vectors",
+        lambda items: synced.extend(items)
+        or VectorStoreResult(backend="pgvector", status="ready", count=len(items)),
+    )
 
     response = client.post(
         "/api/documents/upload",
@@ -64,6 +72,7 @@ def test_document_upload_persists_embedding_index_status(client, admin_headers, 
     assert response.status_code == 200
     assert response.json()["embedding_status"] == "ready"
     assert response.json()["embedding_model"] == "demo-embedding"
+    assert response.json()["vector_store"]["status"] == "ready"
     with get_conn() as conn:
         document = conn.execute(
             "SELECT embedding_status, embedding_model FROM documents WHERE id = ?",
@@ -78,6 +87,8 @@ def test_document_upload_persists_embedding_index_status(client, admin_headers, 
     assert json.loads(chunk["embedding_json"]) == [0.25, 0.75]
     assert chunk["embedding_model"] == "demo-embedding"
     assert chunk["content_hash"]
+    assert len(synced) == 1
+    assert synced[0].document_id == response.json()["id"]
 
 
 def test_bulk_embedding_rebuild_updates_existing_chunks(client, admin_headers, monkeypatch):

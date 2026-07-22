@@ -10,13 +10,13 @@
 - `.gitignore`：屏蔽本地运行文件、数据库、上传文件、缓存、Word 文档和隧道工具。
 - `.gitattributes`：固定源码与文档行尾，标记图片和压缩文件为二进制，避免跨平台差异。
 - `.env.example`：展示可配置环境变量，不包含真实密钥。
-- `Dockerfile`、`compose.yaml`、`.dockerignore`：非 root 容器、生产管理员引导、持久卷和安全构建上下文。
+- `Dockerfile`、`compose.yaml`、`compose.pgvector.yaml`、`.dockerignore`：非 root 应用容器、生产管理员引导、持久卷、可选 pgvector 服务和安全构建上下文。
 - `SECURITY.md`：安全说明，解释密钥、本地数据、Prompt 注入、权限控制和 AI 安全边界。
 - `CONTRIBUTING.md`：贡献指南，说明快速启动、运行测试、发布检查和文档同步流程。
-- `.github/workflows/tests.yml`：GitHub Actions 工作流，自动运行 `pytest`、RAG 质量门禁、容器烟测并上传 JSON 报告。
+- `.github/workflows/tests.yml`：GitHub Actions 工作流，自动运行 `pytest`、RAG 质量门禁、真实 pgvector 集成测试、容器烟测并上传 JSON 报告。
 - `start.ps1`：一键创建虚拟环境、安装依赖、启动服务。
 - `backend/app/`：FastAPI 后端、RAG、Agent、权限、安全、评测、可观测等核心代码。
-- `backend/app/embeddings.py`、`backend/app/agent_planner.py`、`backend/app/evaluation_*.py`：向量索引、受控规划、版本化数据集和质量门禁核心实现。
+- `backend/app/embeddings.py`、`backend/app/vector_store.py`、`backend/app/agent_planner.py`、`backend/app/evaluation_*.py`：向量生成、pgvector 存储适配、受控规划、版本化数据集和质量门禁核心实现。
 - `backend/evaluation/golden_cases.v2.json`、`backend/evaluation/approved_baseline.v2.json`：进入代码评审的 12 条角色化 RAG 黄金数据集与批准基线；v1 文件仅保留为历史快照。
 - `backend/tests/`：pytest 测试，证明核心流程可回归。
 - `backend/requirements.txt`、`backend/requirements-runtime.txt`：开发测试依赖和容器精简运行依赖。
@@ -31,6 +31,7 @@
 - `docs/interview_demo_checklist.md`：面试前环境检查、演示主线和故障预案。
 - `docs/production_roadmap.md`：生产化演进路径，说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent、部门级 ACL 等升级方向。
 - `docs/container_deployment.md`：容器启动、强密码、就绪检查、日志、持久卷备份和单实例边界。
+- `docs/pgvector_retrieval.md`：真实向量后端的配置、历史对账、权限过滤、故障降级、CI 证据和诚实边界。
 - `docs/rag_quality_gate.md`：门禁指标、阈值、基线匹配、CLI 与 CI 行为说明。
 - `docs/final_acceptance_report.md`：最终验收报告，说明功能完成度、工程完成度、发布前验证和生产化边界。
 - `docs/screenshots/`：README 使用的展示截图。
@@ -100,6 +101,7 @@
    ```
 
    容器交付变更还要确认 `docker compose config`、镜像构建和容器烟测通过。
+   pgvector 变更还要确认 `pgvector-integration` Job 使用真实 PostgreSQL 扩展运行通过，而不是只通过 mock 测试。
 
 7. 确认最终验收报告已纳入提交：
 
@@ -119,7 +121,7 @@
 2. 只添加发布版应提交内容：
 
    ```powershell
-   git add README.md CHANGELOG.md LICENSE .gitignore .gitattributes .env.example .dockerignore Dockerfile compose.yaml .github start.ps1 backend frontend samples SECURITY.md CONTRIBUTING.md docs/screenshots docs/diagrams docs/releases docs/resume_project_card.md docs/portfolio_review_scorecard.md docs/architecture_decisions.md docs/interview_talking_points.md docs/interview_demo_checklist.md docs/demo_runbook.md docs/container_deployment.md docs/production_roadmap.md docs/rag_quality_gate.md docs/final_acceptance_report.md docs/github_release_checklist.md scripts/prepare_github_release.ps1 scripts/verify_project.ps1
+   git add README.md CHANGELOG.md LICENSE .gitignore .gitattributes .env.example .dockerignore Dockerfile compose.yaml compose.pgvector.yaml .github start.ps1 backend frontend samples SECURITY.md CONTRIBUTING.md docs/screenshots docs/diagrams docs/releases docs/resume_project_card.md docs/portfolio_review_scorecard.md docs/architecture_decisions.md docs/interview_talking_points.md docs/interview_demo_checklist.md docs/demo_runbook.md docs/container_deployment.md docs/pgvector_retrieval.md docs/production_roadmap.md docs/rag_quality_gate.md docs/final_acceptance_report.md docs/github_release_checklist.md scripts/prepare_github_release.ps1 scripts/verify_project.ps1
    ```
 
 3. 提交：
@@ -138,4 +140,4 @@
 
 - 不要把仓库解释成“毕业设计源码”，而是解释为“从毕业设计基础升级出的 AI 应用开发作品集”。
 - 面试时先展示 README 第一屏、首页 AI 运营指标、Agent 工作台和问答可观测轨迹。
-- 如果被问到生产化差距，主动说明当前向量仍在 SQLite、Agent 使用单实例进程内执行器，后续升级 PostgreSQL + pgvector、独立 rerank、外部任务队列和更细粒度 ACL。
+- 如果被问到生产化差距，主动说明 pgvector 已作为可选向量投影落地，但业务事实源和 BM25 仍在 SQLite、Agent 仍使用单实例进程内执行器；后续继续迁移业务表、全文检索、独立 rerank、外部任务队列和更细粒度 ACL。

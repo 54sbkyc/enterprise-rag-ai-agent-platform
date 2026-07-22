@@ -186,6 +186,8 @@ def build_citations(hits: list[SearchHit]) -> list[dict]:
             "chunk_index": hit.chunk_index,
             "score": round(hit.score, 4),
             "retrieval_mode": hit.retrieval_mode,
+            "vector_backend": hit.vector_backend,
+            "vector_degraded": hit.vector_degraded,
             "score_breakdown": {
                 "bm25": round(hit.bm25_score, 4),
                 "vector": round(hit.vector_score, 4),
