@@ -17,7 +17,7 @@ def test_github_actions_pytest_workflow_exists():
         "python check_requirements.py",
         "python -m pytest",
         "python -m app.eval_gate_cli",
-        "actions/upload-artifact@v4",
+        "actions/upload-artifact@v7",
         "working-directory: backend",
     ]:
         assert phrase.lower() in text.lower()

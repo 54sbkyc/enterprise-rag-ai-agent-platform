@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload RAG quality report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rag-quality-gate-report
           path: .runtime/evaluation-gate-report.json

@@ -165,7 +165,7 @@ def test_ci_runs_and_uploads_the_quality_gate_report():
 
     assert "python -m app.eval_gate_cli" in workflow
     assert "rag-quality-gate-report" in workflow
-    assert "actions/upload-artifact@v4" in workflow
+    assert "actions/upload-artifact@v7" in workflow
 
 
 def test_latest_quality_gate_has_a_single_frontend_render_owner():
