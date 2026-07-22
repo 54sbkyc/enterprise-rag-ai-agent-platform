@@ -4,6 +4,38 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-22
+
+面向大语料向量检索、故障透明度和真实 PostgreSQL 验证的检索基础设施版本。
+
+### Added
+
+- 新增可选 pgvector 检索后端，以余弦距离 HNSW 索引替代 Python 全量向量扫描，同时保留零服务 SQLite 默认模式。
+- 新增有界 Psycopg 连接池、固定维度元数据校验、模型过滤和 filtered HNSW iterative scan。
+- 新增 `/api/documents/vector-store/sync` 管理接口，可将 SQLite 已有向量对账到 pgvector，无需重新调用 Embedding 服务。
+- 新增 `compose.pgvector.yaml`，使用官方 pgvector PostgreSQL 镜像、健康检查和独立持久卷。
+- 新增 GitHub Actions `pgvector-integration` Job，真实验证扩展初始化、索引、批量 upsert、候选权限过滤、更新和删除。
+
+### Changed
+
+- 文档上传、Embedding 重建、文档重索引和删除现在同步外部向量投影，并在 API 与审计中记录同步状态。
+- pgvector 查询只接收 SQLite 根据当前角色和文档状态生成的允许片段 ID，外部旧索引不能绕过实时权限。
+- 搜索解释、引用和 Agent 结果新增实际向量后端与降级标记；pgvector 故障可回退 SQLite JSON，也可配置为就绪失败。
+- README、架构决策、简历项目卡、面试话术、评分卡、生产化路线图和发布治理同步到当前实现边界。
+
+### Validation
+
+- 143 项 pytest 自动化测试通过，另有 2 项真实 pgvector PostgreSQL 集成测试通过。
+- 12 条角色化黄金用例全部通过，Recall@K、MRR、答案、拒答与访问控制准确率均为 100%。
+- GitHub Actions 的 pytest、pgvector integration 和加固容器烟测三个 Job 全部通过。
+- 基础 Compose 与 pgvector 叠加 Compose 配置、锁定依赖、Python 编译、Markdown 链接和疑似密钥扫描通过。
+
+### Known Boundaries
+
+- pgvector 是可重建的向量检索投影；用户、文档正文、审计、Agent 和评测等业务事实仍在 SQLite。
+- BM25 仍读取当前可访问片段在应用内计算，大规模多实例还需迁移业务表与关键词检索。
+- SQLite 与 PostgreSQL 不共享事务，当前采用 SQLite 先提交、外部索引最终一致和管理员对账策略。
+
 ## [1.3.0] - 2026-07-22
 
 面向干净机器复现、安全启动和单实例部署验收的容器交付版本。
@@ -106,7 +138,8 @@
 - Agent 当前同步执行；生产环境仍需异步队列、幂等、取消和人工审批。
 - 关键条件覆盖率是可配置启发式规则，需要用真实业务评测集持续校准。
 
-[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0

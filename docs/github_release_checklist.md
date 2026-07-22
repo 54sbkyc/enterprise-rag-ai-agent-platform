@@ -101,6 +101,7 @@
    ```
 
    容器交付变更还要确认 `docker compose config`、镜像构建和容器烟测通过。
+   pgvector 变更还要确认 `pgvector-integration` Job 使用真实 PostgreSQL 扩展运行通过，而不是只通过 mock 测试。
 
 7. 确认最终验收报告已纳入提交：
 
