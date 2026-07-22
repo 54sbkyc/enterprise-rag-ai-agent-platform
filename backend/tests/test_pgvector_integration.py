@@ -37,7 +37,7 @@ def test_pgvector_upsert_acl_candidate_filter_and_delete(monkeypatch):
         ]
     )
 
-    assert sync.status == "ready"
+    assert sync.status == "ready", sync.diagnostic
     assert sync.count == 3
     allowed = query_chunk_vectors(
         [1.0, 0.0, 0.0],
@@ -45,14 +45,14 @@ def test_pgvector_upsert_acl_candidate_filter_and_delete(monkeypatch):
         [910011, 910012],
         5,
     )
-    assert allowed.status == "ready"
+    assert allowed.status == "ready", allowed.diagnostic
     assert list(allowed.scores)[0] == 910011
     assert 910021 not in allowed.scores
 
     updated = sync_chunk_vectors(
         [ChunkVector(910012, 91001, "integration-demo", "updated", [1.0, 0.0, 0.0])]
     )
-    assert updated.status == "ready"
+    assert updated.status == "ready", updated.diagnostic
     exact = query_chunk_vectors([1.0, 0.0, 0.0], "integration-demo", [910012], 1)
     assert exact.scores[910012] == pytest.approx(1.0)
 

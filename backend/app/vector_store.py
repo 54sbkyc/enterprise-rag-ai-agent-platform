@@ -31,6 +31,7 @@ class VectorStoreResult:
     count: int = 0
     error: str | None = None
     scores: dict[int, float] = field(default_factory=dict)
+    diagnostic: str | None = field(default=None, repr=False, compare=False)
 
     def public_dict(self) -> dict:
         result = {"backend": self.backend, "status": self.status, "count": self.count}
@@ -84,6 +85,8 @@ def sync_chunk_vectors(items: list[ChunkVector]) -> VectorStoreResult:
     if not usable:
         return VectorStoreResult(backend="pgvector", status="ready", count=0)
     try:
+        from pgvector import Vector
+
         dimensions = pgvector_dimensions()
         _validate_items(usable, dimensions)
         with _connect_pgvector(dimensions) as conn:
@@ -107,14 +110,19 @@ def sync_chunk_vectors(items: list[ChunkVector]) -> VectorStoreResult:
                             item.document_id,
                             item.embedding_model,
                             item.content_hash,
-                            item.embedding,
+                            Vector(item.embedding),
                         )
                         for item in usable
                     ],
                 )
         return VectorStoreResult(backend="pgvector", status="ready", count=len(usable))
     except Exception as exc:
-        return VectorStoreResult(backend="pgvector", status="degraded", error=_public_error(exc))
+        return VectorStoreResult(
+            backend="pgvector",
+            status="degraded",
+            error=_public_error(exc),
+            diagnostic=_diagnostic(exc),
+        )
 
 
 def query_chunk_vectors(
@@ -126,11 +134,14 @@ def query_chunk_vectors(
     if not allowed_chunk_ids or not query_embedding:
         return VectorStoreResult(backend="pgvector", status="ready")
     try:
+        from pgvector import Vector
+
         dimensions = pgvector_dimensions()
         if len(query_embedding) != dimensions:
             raise VectorStoreConfigurationError(
                 f"query embedding has {len(query_embedding)} dimensions; expected {dimensions}"
             )
+        query_vector = Vector(query_embedding)
         with _connect_pgvector(dimensions) as conn:
             conn.execute("SET LOCAL hnsw.iterative_scan = strict_order")
             rows = conn.execute(
@@ -141,7 +152,7 @@ def query_chunk_vectors(
                 ORDER BY embedding <=> %s
                 LIMIT %s
                 """,
-                (query_embedding, embedding_model, allowed_chunk_ids, query_embedding, max(1, limit)),
+                (query_vector, embedding_model, allowed_chunk_ids, query_vector, max(1, limit)),
             ).fetchall()
         scores = {
             int(row[0]): max(0.0, min(1.0, float(row[1])))
@@ -155,7 +166,12 @@ def query_chunk_vectors(
             scores=scores,
         )
     except Exception as exc:
-        return VectorStoreResult(backend="pgvector", status="degraded", error=_public_error(exc))
+        return VectorStoreResult(
+            backend="pgvector",
+            status="degraded",
+            error=_public_error(exc),
+            diagnostic=_diagnostic(exc),
+        )
 
 
 def delete_document_vectors(document_id: int) -> VectorStoreResult:
@@ -175,7 +191,12 @@ def delete_document_vectors(document_id: int) -> VectorStoreResult:
             count = cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
         return VectorStoreResult(backend="pgvector", status="ready", count=count)
     except Exception as exc:
-        return VectorStoreResult(backend="pgvector", status="degraded", error=_public_error(exc))
+        return VectorStoreResult(
+            backend="pgvector",
+            status="degraded",
+            error=_public_error(exc),
+            diagnostic=_diagnostic(exc),
+        )
 
 
 def vector_store_health() -> VectorStoreResult:
@@ -191,7 +212,12 @@ def vector_store_health() -> VectorStoreResult:
             conn.execute("SELECT 1 FROM rag_chunk_embeddings LIMIT 1").fetchone()
         return VectorStoreResult(backend="pgvector", status="ready")
     except Exception as exc:
-        return VectorStoreResult(backend="pgvector", status="degraded", error=_public_error(exc))
+        return VectorStoreResult(
+            backend="pgvector",
+            status="degraded",
+            error=_public_error(exc),
+            diagnostic=_diagnostic(exc),
+        )
 
 
 def close_vector_store_pool() -> None:
@@ -336,3 +362,8 @@ def _public_error(exc: Exception) -> str:
     if isinstance(exc, (ImportError, ModuleNotFoundError)):
         return "pgvector_dependency_missing"
     return "pgvector_unavailable"
+
+
+def _diagnostic(exc: Exception) -> str:
+    message = " ".join(str(exc).split())[:500]
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
