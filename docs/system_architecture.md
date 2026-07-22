@@ -95,7 +95,7 @@ flowchart TD
 | 原始文档 | 管理员或技术员工上传 | 上传文件目录 | 重新索引和原始资料留存。 |
 | 文档元数据 | 文档入库模块 | `documents` | 文档列表、权限过滤、统计分析。 |
 | 知识片段 | 文档切分模块 | `chunks` | 检索和回答依据。 |
-| 向量检索投影 | 文档入库/对账模块 | 可选 `rag_chunk_embeddings` | 使用 HNSW 返回允许片段中的语义候选，可从 SQLite 重建。 |
+| 向量检索投影 | 文档入库/对账模块 | 可选 `rag_chunk_embeddings` | 使用实时允许文档 ID 过滤 HNSW 语义候选，可从 SQLite 重建并在回载时复核片段。 |
 | 问答记录 | 问答接口 | `qa_logs` | 审计、统计、质量分析。 |
 | 评测记录 | 评测中心 | `evaluations`、`batch_eval_runs`、`batch_eval_results` | 测试章节和质量评估。 |
 | 操作记录 | 管理员操作 | `audit_logs` | 追踪文档和用户变更。 |

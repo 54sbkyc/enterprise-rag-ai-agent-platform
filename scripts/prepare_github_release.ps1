@@ -66,7 +66,8 @@ $RequiredPaths = @(
     "docs/releases/v1.1.0.md",
     "docs/releases/v1.2.0.md",
     "docs/releases/v1.3.0.md",
-    "docs/releases/v1.4.0.md"
+    "docs/releases/v1.4.0.md",
+    "docs/releases/v1.5.0.md"
 )
 
 $BlockedPaths = @(
@@ -148,6 +149,7 @@ $MarkdownFilesToValidate = @(
     "docs/production_roadmap.md",
     "docs/container_deployment.md",
     "docs/pgvector_retrieval.md",
+    "docs/fts5_retrieval.md",
     "docs/rag_quality_gate.md",
     "docs/interview_talking_points.md",
     "docs/interview_demo_checklist.md",
@@ -157,7 +159,8 @@ $MarkdownFilesToValidate = @(
     "docs/releases/v1.1.0.md",
     "docs/releases/v1.2.0.md",
     "docs/releases/v1.3.0.md",
-    "docs/releases/v1.4.0.md"
+    "docs/releases/v1.4.0.md",
+    "docs/releases/v1.5.0.md"
 )
 
 $PublicPatternsToScanForSecrets = @(
