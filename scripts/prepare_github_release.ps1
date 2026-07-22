@@ -59,7 +59,8 @@ $RequiredPaths = @(
     "docs/diagrams/system-components.puml",
     "docs/diagrams/system-components.svg",
     "docs/releases/v1.1.0.md",
-    "docs/releases/v1.2.0.md"
+    "docs/releases/v1.2.0.md",
+    "docs/releases/v1.3.0.md"
 )
 
 $BlockedPaths = @(
@@ -147,7 +148,8 @@ $MarkdownFilesToValidate = @(
     "docs/final_acceptance_report.md",
     "docs/diagrams/README.md",
     "docs/releases/v1.1.0.md",
-    "docs/releases/v1.2.0.md"
+    "docs/releases/v1.2.0.md",
+    "docs/releases/v1.3.0.md"
 )
 
 $PublicPatternsToScanForSecrets = @(
