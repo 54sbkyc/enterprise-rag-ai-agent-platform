@@ -37,7 +37,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/api/search` | 管理员/技术员工 | 执行 BM25/混合检索，按角色过滤密级，并返回分数拆解和排序解释。 |
+| GET | `/api/search` | 管理员/技术员工 | 执行标题/正文字段加权 BM25 或混合检索，按角色过滤密级，并返回分数拆解和排序解释。 |
 | POST | `/api/ask` | 登录用户 | 执行安全检查、检索、回答生成、引用返回和日志记录。 |
 | POST | `/api/qa-feedback` | 登录用户 | 提交问答有用性反馈，负向反馈自动沉淀为知识缺口。 |
 | GET | `/api/qa-feedback` | 管理员/技术员工 | 查询员工问答反馈、关联问答记录和知识缺口状态。 |
@@ -77,11 +77,12 @@
 | POST | `/api/evaluate` | 管理员/技术员工 | 运行单条评测并保存得分。 |
 | GET | `/api/evaluations` | 管理员/技术员工 | 查询评测记录。 |
 | GET | `/api/evaluation/cases` | 管理员/技术员工 | 查询批量评测用例。 |
-| POST | `/api/evaluation/cases` | 管理员/技术员工 | 新增评测用例。 |
-| PATCH | `/api/evaluation/cases/{case_id}` | 管理员/技术员工 | 修改评测用例。 |
-| DELETE | `/api/evaluation/cases/{case_id}` | 管理员/技术员工 | 删除评测用例。 |
-| POST | `/api/evaluation/batch/run` | 管理员/技术员工 | 运行批量评测并保存 Recall@K、MRR、答案与拒答准确率。 |
-| GET | `/api/evaluation/batch/runs` | 管理员/技术员工 | 查询批量评测历史。 |
+| GET | `/api/evaluation/dataset` | 管理员/技术员工 | 查询黄金数据集版本、指纹、用例数、默认阈值和批准基线。 |
+| POST | `/api/evaluation/cases` | 管理员/技术员工 | 新增可编辑的自定义评测用例。 |
+| PATCH | `/api/evaluation/cases/{case_id}` | 管理员/技术员工 | 修改自定义评测用例；版本化黄金用例只读。 |
+| DELETE | `/api/evaluation/cases/{case_id}` | 管理员/技术员工 | 删除自定义评测用例；版本化黄金用例不可删除。 |
+| POST | `/api/evaluation/batch/run` | 管理员/技术员工 | 默认仅运行黄金用例；支持 Top K、指标阈值、最小用例数、最大回退、指定基线和显式包含自定义用例。 |
+| GET | `/api/evaluation/batch/runs` | 管理员/技术员工 | 查询门禁历史、数据集指纹、失败指标和基线差异。 |
 | GET | `/api/evaluation/batch/runs/{run_id}/export` | 管理员/技术员工 | 导出 Markdown 或 CSV 报告。 |
 
 ## 统计与审计
@@ -102,3 +103,8 @@
 | `blocked` | 是否被安全策略拦截。 |
 | `block_reason` | 被拦截时的原因。 |
 | `citation_hit` | 评测时引用来源命中率。 |
+| `gate.status` | RAG 质量门禁结论，取值为 `passed` 或 `failed`。 |
+| `gate.failed_metrics` | 未达到绝对阈值或相对基线要求的指标。 |
+| `gate.metric_deltas` | 当前运行相对兼容历史基线的指标变化。 |
+| `gate.baseline_reference` | 当前使用的历史运行或随代码提交的批准基线标识。 |
+| `dataset.fingerprint` | 评测用例规范化后生成的 SHA-256 指纹。 |

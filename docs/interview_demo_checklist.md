@@ -8,7 +8,8 @@
 - 确认 [v1.1.0 Release](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0) 可以打开。
 - 本地运行 `git status -sb`，确保公开仓库工作区干净。
 - 运行 `\.\scripts\verify_project.ps1`，记录当前 pytest 通过数量。
-- 检查 README 三张截图、架构图和生产化路线图链接。
+- 确认验证输出中的 RAG quality gate 为 `PASSED`，Actions 中可下载 JSON 报告。
+- 检查 README 四张截图、架构图和生产化路线图链接。
 
 ## 面试前五分钟
 
@@ -27,7 +28,7 @@
 | 2:00-3:15 | 问答：员工事假问题 | 引用、置信度、决策轨迹、Token 和成本。 |
 | 3:15-4:15 | 问答：火星差旅问题 | 即使命中差旅制度，核心条件无依据时仍拒答。 |
 | 4:15-5:45 | Agent 工作台 | 受控计划、工具白名单、权限、重试、耗时和状态。 |
-| 5:45-6:45 | 评测中心 | Recall@K、MRR、答案与拒答准确率分开度量。 |
+| 5:45-6:45 | 评测中心 | 黄金集版本、门禁结论、批准/历史基线差异，以及 Recall@K、MRR、答案与拒答准确率。 |
 | 6:45-8:00 | 架构和生产化路线图 | 诚实说明 SQLite、进程内 Agent、外部队列、pgvector 和 ACL 演进。 |
 
 ## 必备问题

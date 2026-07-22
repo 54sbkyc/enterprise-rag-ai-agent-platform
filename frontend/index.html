@@ -478,7 +478,10 @@
               <div id="scoreChart" class="bar-chart"></div>
             </article>
             <article class="panel">
-              <div class="panel-title"><span>最新批量结果</span></div>
+              <div class="panel-title">
+                <span>最新质量门禁</span>
+                <span id="evaluationDatasetBadge" class="badge muted">加载中</span>
+              </div>
               <div id="batchSummary" class="summary-box">暂无批量评测结果。</div>
             </article>
           </section>
@@ -495,7 +498,7 @@
               <label class="field-label" for="evalDocuments">期望来源文档</label>
               <input id="evalDocuments" class="input" placeholder="ordinary_enterprise_handbook" />
               <button id="evaluateBtn" class="primary-btn full">记录评测</button>
-              <button id="batchEvaluateBtn" class="ghost-btn full">运行内置批量评测</button>
+              <button id="batchEvaluateBtn" class="ghost-btn full">运行 RAG 质量门禁</button>
               <div id="evalResult" class="status-line"></div>
             </section>
 

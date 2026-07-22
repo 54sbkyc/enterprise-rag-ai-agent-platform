@@ -51,6 +51,29 @@ def test_bm25_ranks_relevant_policy_and_exposes_scores():
     assert hits[0].rerank_score >= 0
 
 
+def test_field_weighted_bm25_uses_title_to_resolve_generic_content_distractors():
+    insert_chunk(
+        "合同审批与风险控制指南",
+        "合同发起人需提交合同正文、商务条款说明、报价依据、交付范围和风险说明。",
+        level="sensitive",
+    )
+    insert_chunk(
+        "销售报价策略",
+        "常规折扣需要提交审批材料，说明客户背景、回款计划和交付风险。",
+        level="sensitive",
+    )
+    insert_chunk(
+        "数据管理制度",
+        "敏感资料对外发送前需要提交申请并经过部门负责人审批。",
+        level="sensitive",
+    )
+
+    hits = search.search_chunks("合同审批需要提交哪些材料？", 3, ["sensitive"])
+
+    assert hits[0].document_title == "合同审批与风险控制指南"
+    assert hits[0].bm25_score > hits[1].bm25_score
+
+
 def test_vector_recall_finds_semantic_match_without_lexical_overlap(monkeypatch):
     insert_chunk("差旅制度", "出差住宿标准按照城市等级和岗位级别执行。", embedding=[1.0, 0.0], model="demo")
     insert_chunk("设备制度", "笔记本电脑需要通过资产系统登记。", embedding=[0.0, 1.0], model="demo")

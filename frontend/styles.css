@@ -488,6 +488,14 @@ button:disabled {
   opacity: 0.62;
 }
 
+.input:disabled,
+textarea:disabled,
+select:disabled {
+  cursor: not-allowed;
+  background: #f3f6f8;
+  color: #667085;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -1095,6 +1103,22 @@ textarea {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.case-title {
+  margin-bottom: 6px;
+}
+
+.case-source {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gate-failure {
+  color: var(--danger);
+  font-weight: 700;
 }
 
 .inline-check {

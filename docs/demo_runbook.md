@@ -90,7 +90,7 @@
 
 ### 5:15-6:30 评测中心与知识治理
 
-切回管理员账号，进入评测中心运行标准用例，展示 Recall@K、MRR、答案正确率和拒答准确率。
+切回管理员账号，进入评测中心运行版本化质量门禁，展示黄金集版本、SHA-256 指纹、Recall@K、MRR、答案/拒答准确率、阈值结论和历史基线变化。
 
 再展示知识缺口、员工反馈和健康体检，说明低置信度或负向反馈如何沉淀为待治理任务，并通过复评形成闭环。
 
@@ -99,14 +99,15 @@
 打开仓库，展示：
 
 - `backend/tests/`：自动化回归。
-- `.github/workflows/tests.yml`：CI。
-- `scripts/verify_project.ps1`：编译、依赖、测试和发布总验收。
+- `.github/workflows/tests.yml`：pytest、RAG 质量门禁和 JSON 报告产物。
+- `scripts/verify_project.ps1`：编译、依赖、测试、AI 质量门禁和发布总验收。
+- `docs/rag_quality_gate.md`：黄金集、阈值与基线策略。
 - `scripts/prepare_github_release.ps1`：必需文件、链接、忽略规则和疑似密钥扫描。
 - `docs/architecture_decisions.md`：技术取舍。
 
 ### 7:20-8:00 诚实边界
 
-主动说明当前版本已实现 BM25 + 可选 Embedding 混合检索、量化评测和 Agent 失败治理；生产环境仍需升级 PostgreSQL + pgvector、独立 rerank、异步 Agent、部门级 ACL、集中日志和密钥管理。
+主动说明当前版本已实现 BM25 + 可选 Embedding 混合检索、版本化质量门禁和 Agent 失败治理；生产环境仍需扩大分领域评测集，并升级 PostgreSQL + pgvector、独立 rerank、外部任务队列、部门级 ACL、集中日志和密钥管理。
 
 ## 两个异常场景
 

@@ -104,4 +104,4 @@ def test_interview_demo_checklist_covers_preflight_and_failure_modes():
     resume = (ROOT / "docs" / "resume_project_card.md").read_text(encoding="utf-8")
     assert "docs/interview_demo_checklist.md" in readme
     assert "interview_demo_checklist.md" in resume
-    assert "119 项" in resume
+    assert "126 项" in resume

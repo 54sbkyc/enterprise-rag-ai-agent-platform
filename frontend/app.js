@@ -9,6 +9,7 @@ const state = {
   logs: [],
   evaluations: [],
   evaluationCases: [],
+  evaluationDataset: null,
   users: [],
   auditLogs: [],
   agentRuns: [],
@@ -98,6 +99,14 @@ const gapStatusLabels = {
   processing: "处理中",
   resolved: "已解决",
   closed: "无需处理",
+};
+
+const evaluationMetricLabels = {
+  total: "用例覆盖",
+  recall_at_k: "Recall@K",
+  mrr: "MRR",
+  answer_accuracy: "答案正确率",
+  abstention_accuracy: "拒答准确率",
 };
 
 const REMEMBER_LOGIN_KEY = "enterprise_kb_remember_login";
@@ -312,7 +321,16 @@ async function refreshEvaluationPage() {
     loadEvaluations(),
     loadBatchRuns(),
     loadEvaluationCases(),
+    loadEvaluationDataset(),
   ]);
+}
+
+async function loadEvaluationDataset() {
+  state.evaluationDataset = await api("/api/evaluation/dataset");
+  const badge = $("#evaluationDatasetBadge");
+  if (!badge) return;
+  badge.textContent = `${state.evaluationDataset.version} · ${state.evaluationDataset.case_count} 条`;
+  badge.title = `数据集指纹 ${state.evaluationDataset.fingerprint} · 批准基线 ${state.evaluationDataset.approved_baseline?.version || "未配置"}`;
 }
 
 async function loadDashboard() {
@@ -791,21 +809,26 @@ function renderEvaluationCases() {
   }
   list.innerHTML = state.evaluationCases
     .map(
-      (item) => `
+      (item) => {
+        const readonly = item.is_golden;
+        const sourceLabel = readonly ? `${item.dataset_version} · ${item.category}` : `自定义 · ${item.category}`;
+        return `
         <div class="compact-item">
-          <strong>用例 #${item.id}</strong>
+          <div class="panel-title case-title">
+            <strong>用例 #${item.id}</strong>
+            <span class="badge ${readonly ? "" : "muted"}">${readonly ? "黄金用例" : "自定义"}</span>
+          </div>
+          <span class="case-source">${escapeHtml(sourceLabel)}${item.case_key ? ` · ${escapeHtml(item.case_key)}` : ""}</span>
           <div class="case-form">
-            <input class="input" data-case-question="${item.id}" value="${escapeHtml(item.question)}" />
-            <input class="input" data-case-keywords="${item.id}" value="${escapeHtml(item.expected_keywords.join(", "))}" />
-            <input class="input" data-case-documents="${item.id}" value="${escapeHtml(item.expected_documents.join(", "))}" />
-            <label class="inline-check"><input type="checkbox" data-case-should-answer="${item.id}" ${item.should_answer ? "checked" : ""} /> 应有答案</label>
-            <div class="compact-actions">
-              <button class="ghost-btn small-btn" data-case-save="${item.id}">保存</button>
-              <button class="delete-btn" data-case-delete="${item.id}">×</button>
-            </div>
+            <input class="input" data-case-question="${item.id}" value="${escapeHtml(item.question)}" ${readonly ? "disabled" : ""} />
+            <input class="input" data-case-keywords="${item.id}" value="${escapeHtml(item.expected_keywords.join(", "))}" ${readonly ? "disabled" : ""} />
+            <input class="input" data-case-documents="${item.id}" value="${escapeHtml(item.expected_documents.join(", "))}" ${readonly ? "disabled" : ""} />
+            <label class="inline-check"><input type="checkbox" data-case-should-answer="${item.id}" ${item.should_answer ? "checked" : ""} ${readonly ? "disabled" : ""} /> 应有答案</label>
+            ${readonly ? "" : `<div class="compact-actions"><button class="ghost-btn small-btn" data-case-save="${item.id}">保存</button><button class="delete-btn" title="删除用例" data-case-delete="${item.id}">×</button></div>`}
           </div>
         </div>
-      `,
+      `;
+      },
     )
     .join("");
 }
@@ -1120,15 +1143,6 @@ function renderAnalytics() {
     { label: "中等", value: state.analytics.evaluation_buckets.medium },
     { label: "高分", value: state.analytics.evaluation_buckets.high },
   ]);
-  const batch = state.analytics.latest_batch;
-  $("#batchSummary").innerHTML = batch
-    ? `
-      <span>平均得分</span><strong>${percentText(batch.avg_score)}</strong>
-      <span>平均置信度：${percentText(batch.avg_confidence)}</span>
-      <span>引用命中率：${percentText(batch.citation_hit_rate)}</span>
-      <span>安全拦截占比：${percentText(state.analytics.blocked_ratio)}</span>
-    `
-    : `<span>暂无批量评测结果。</span><span>安全拦截占比：${percentText(state.analytics.blocked_ratio)}</span>`;
 }
 
 function renderBarChart(selector, rows) {
@@ -1304,16 +1318,27 @@ async function loadBatchRuns() {
   Object.assign(paging, { page: result.page, pageSize: result.page_size, total: result.total });
   renderPagination("#batchPagination", "batches", result);
   renderBatchRuns();
-  if (!state.batchRuns.length) return;
-  const latest = state.batchRuns[0];
+  renderLatestQualityGate(state.batchRuns[0]);
+}
+
+function renderLatestQualityGate(latest) {
+  if (!latest) {
+    $("#batchSummary").innerHTML = `<span>暂无质量门禁结果。</span>`;
+    return;
+  }
+  const gatePassed = latest.gate_status === "passed";
+  const failed = (latest.failed_metrics || []).map((metric) => evaluationMetricLabels[metric] || metric);
+  const baseline = latest.baseline_reference || (latest.baseline_run_id ? `历史运行 #${latest.baseline_run_id}` : "无兼容基线");
   $("#batchSummary").innerHTML = `
-    <span>最近运行：${formatDate(latest.created_at)}</span>
-    <strong>${percentText(latest.avg_score)}</strong>
+    <span class="badge ${gatePassed ? "" : "danger"}">${gatePassed ? "门禁通过" : "门禁失败"}</span>
+    <strong>${percentText(latest.answer_accuracy)}</strong>
+    <span>${escapeHtml(latest.dataset_version)} · ${escapeHtml(latest.dataset_hash.slice(0, 12))} · Top ${latest.top_k} · ${baseline}</span>
     <span>平均置信度：${percentText(latest.avg_confidence)}</span>
     <span>Recall@K：${percentText(latest.recall_at_k)}</span>
     <span>MRR：${Number(latest.mrr || 0).toFixed(3)}</span>
     <span>答案正确率：${percentText(latest.answer_accuracy)}</span>
     <span>拒答准确率：${percentText(latest.abstention_accuracy)}</span>
+    ${failed.length ? `<span class="gate-failure">未通过：${escapeHtml(failed.join("、"))}</span>` : ""}
   `;
 }
 
@@ -1326,16 +1351,27 @@ function renderBatchRuns() {
   list.innerHTML = state.batchRuns
     .slice(0, 5)
     .map(
-      (run) => `
+      (run) => {
+        const gatePassed = run.gate_status === "passed";
+        const deltas = Object.entries(run.metric_deltas || {})
+          .map(([metric, value]) => `${evaluationMetricLabels[metric] || metric} ${Number(value) >= 0 ? "+" : ""}${percentText(value)}`)
+          .join(" · ");
+        return `
         <div class="compact-item">
-          <strong>批量评测 #${run.id}</strong>
+          <div class="panel-title case-title">
+            <strong>质量门禁 #${run.id}</strong>
+            <span class="badge ${gatePassed ? "" : "danger"}">${gatePassed ? "通过" : "失败"}</span>
+          </div>
+          <span>${escapeHtml(run.dataset_version)} · ${escapeHtml(run.dataset_hash.slice(0, 12))} · Top ${run.top_k} · ${escapeHtml(run.baseline_reference || (run.baseline_run_id ? `历史运行 #${run.baseline_run_id}` : "无兼容基线"))}</span>
           <span>${run.total} 条 · Recall@K ${percentText(run.recall_at_k)} · MRR ${Number(run.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(run.answer_accuracy)} · 拒答准确率 ${percentText(run.abstention_accuracy)} · ${formatDate(run.created_at)}</span>
+          ${deltas ? `<span>相对基线：${escapeHtml(deltas)}</span>` : ""}
           <div class="compact-actions">
             <button class="ghost-btn small-btn" data-export-md="${run.id}">导出 Markdown</button>
             <button class="ghost-btn small-btn" data-export-csv="${run.id}">导出 CSV</button>
           </div>
         </div>
-      `,
+      `;
+      },
     )
     .join("");
 }
@@ -2207,7 +2243,7 @@ async function evaluateQuestion() {
 
 async function runBatchEvaluation() {
   $("#batchEvaluateBtn").disabled = true;
-  setText("#evalResult", "正在运行批量评测...");
+  setText("#evalResult", "正在运行版本化 RAG 质量门禁...");
   try {
     const result = await api("/api/evaluation/batch/run", {
       method: "POST",
@@ -2216,7 +2252,7 @@ async function runBatchEvaluation() {
     });
     setText(
       "#evalResult",
-      `批量完成：${result.summary.total} 条 · Recall@K ${percentText(result.summary.recall_at_k)} · MRR ${Number(result.summary.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(result.summary.answer_accuracy)} · 拒答准确率 ${percentText(result.summary.abstention_accuracy)}`,
+      `${result.gate.status === "passed" ? "门禁通过" : `门禁失败：${result.gate.failed_metrics.map((metric) => evaluationMetricLabels[metric] || metric).join("、")}`} · ${result.summary.total} 条 · Recall@K ${percentText(result.summary.recall_at_k)} · MRR ${Number(result.summary.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(result.summary.answer_accuracy)} · 拒答准确率 ${percentText(result.summary.abstention_accuracy)}`,
     );
     await refreshEvaluationPage();
     await loadLogs();

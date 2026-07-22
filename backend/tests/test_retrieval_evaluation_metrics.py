@@ -86,7 +86,20 @@ def test_batch_evaluation_returns_practical_quality_metrics(client, admin_header
             ),
         )
 
-    response = client.post("/api/evaluation/batch/run", headers=admin_headers, json={})
+    response = client.post(
+        "/api/evaluation/batch/run",
+        headers=admin_headers,
+        json={
+            "include_custom": True,
+            "minimum_cases": 2,
+            "thresholds": {
+                "recall_at_k": 1.0,
+                "mrr": 1.0,
+                "answer_accuracy": 1.0,
+                "abstention_accuracy": 1.0,
+            },
+        },
+    )
 
     assert response.status_code == 200
     summary = response.json()["summary"]
@@ -94,6 +107,8 @@ def test_batch_evaluation_returns_practical_quality_metrics(client, admin_header
     assert summary["mrr"] == 1.0
     assert summary["answer_accuracy"] == 1.0
     assert summary["abstention_accuracy"] == 1.0
+    assert response.json()["gate"]["status"] == "passed"
+    assert response.json()["gate"]["baseline_run_id"] is None
     with get_conn() as conn:
         run = conn.execute(
             "SELECT recall_at_k, mrr, answer_accuracy, abstention_accuracy FROM batch_eval_runs"
@@ -136,11 +151,13 @@ def test_legacy_builtin_cases_are_migrated_to_current_document_sources():
         ).fetchone()
         contract_case = conn.execute(
             """
-            SELECT expected_documents FROM evaluation_cases
-            WHERE question = '核心合作合同审批需要提交哪些材料？'
+            SELECT case_key, dataset_version, expected_documents FROM evaluation_cases
+            WHERE question = '合同审批需要提交哪些材料？'
             """
         ).fetchone()
 
     assert "enterprise_suite_attendance_leave.md" in leave_case["expected_documents"]
     assert contract_case is not None
-    assert "核心客户合同.docx" in contract_case["expected_documents"]
+    assert contract_case["case_key"] == "contract-approval-materials"
+    assert contract_case["dataset_version"] == "enterprise-rag-golden-v1"
+    assert "enterprise_suite_contract_risk.md" in contract_case["expected_documents"]

@@ -47,6 +47,7 @@ def test_contributing_guide_documents_repeatable_workflow():
         "文档同步",
         "不要提交",
         "python -m pytest",
+        "python -m app.eval_gate_cli",
     ]:
         assert phrase in text
 
@@ -65,6 +66,7 @@ def test_architecture_decisions_explain_key_tradeoffs():
         "本地抽取式回答",
         "OpenAI Chat Completions",
         "发布治理",
+        "RAG 回归门禁",
     ]:
         assert phrase in text
 
