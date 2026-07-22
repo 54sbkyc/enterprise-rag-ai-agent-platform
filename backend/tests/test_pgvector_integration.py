@@ -53,8 +53,9 @@ def test_pgvector_upsert_acl_candidate_filter_and_delete(monkeypatch):
         [ChunkVector(910012, 91001, "integration-demo", "updated", [1.0, 0.0, 0.0])]
     )
     assert updated.status == "ready", updated.diagnostic
-    exact = query_chunk_vectors([1.0, 0.0, 0.0], "integration-demo", [91001], 1)
+    exact = query_chunk_vectors([1.0, 0.0, 0.0], "integration-demo", [91001], 2)
     assert exact.scores[910012] == pytest.approx(1.0)
+    assert 910021 not in exact.scores
 
     deleted = delete_document_vectors(91001)
     assert deleted.status == "ready"
