@@ -10,15 +10,16 @@
 - `.gitignore`：屏蔽本地运行文件、数据库、上传文件、缓存、Word 文档和隧道工具。
 - `.gitattributes`：固定源码与文档行尾，标记图片和压缩文件为二进制，避免跨平台差异。
 - `.env.example`：展示可配置环境变量，不包含真实密钥。
+- `Dockerfile`、`compose.yaml`、`.dockerignore`：非 root 容器、生产管理员引导、持久卷和安全构建上下文。
 - `SECURITY.md`：安全说明，解释密钥、本地数据、Prompt 注入、权限控制和 AI 安全边界。
 - `CONTRIBUTING.md`：贡献指南，说明快速启动、运行测试、发布检查和文档同步流程。
-- `.github/workflows/tests.yml`：GitHub Actions 工作流，自动运行 `pytest`、RAG 质量门禁并上传 JSON 报告。
+- `.github/workflows/tests.yml`：GitHub Actions 工作流，自动运行 `pytest`、RAG 质量门禁、容器烟测并上传 JSON 报告。
 - `start.ps1`：一键创建虚拟环境、安装依赖、启动服务。
 - `backend/app/`：FastAPI 后端、RAG、Agent、权限、安全、评测、可观测等核心代码。
 - `backend/app/embeddings.py`、`backend/app/agent_planner.py`、`backend/app/evaluation_*.py`：向量索引、受控规划、版本化数据集和质量门禁核心实现。
 - `backend/evaluation/golden_cases.v2.json`、`backend/evaluation/approved_baseline.v2.json`：进入代码评审的 12 条角色化 RAG 黄金数据集与批准基线；v1 文件仅保留为历史快照。
 - `backend/tests/`：pytest 测试，证明核心流程可回归。
-- `backend/requirements.txt`：后端依赖。
+- `backend/requirements.txt`、`backend/requirements-runtime.txt`：开发测试依赖和容器精简运行依赖。
 - `backend/seed_enterprise_documents.py`：可复现的企业样例文档导入脚本。
 - `frontend/`：前端页面、样式和交互逻辑。
 - `samples/`：轻量样例文档，可用于演示上传和权限过滤。
@@ -29,6 +30,7 @@
 - `docs/demo_runbook.md`：面向 AI 应用开发岗位的 8 分钟演示脚本和生产化追问。
 - `docs/interview_demo_checklist.md`：面试前环境检查、演示主线和故障预案。
 - `docs/production_roadmap.md`：生产化演进路径，说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent、部门级 ACL 等升级方向。
+- `docs/container_deployment.md`：容器启动、强密码、就绪检查、日志、持久卷备份和单实例边界。
 - `docs/rag_quality_gate.md`：门禁指标、阈值、基线匹配、CLI 与 CI 行为说明。
 - `docs/final_acceptance_report.md`：最终验收报告，说明功能完成度、工程完成度、发布前验证和生产化边界。
 - `docs/screenshots/`：README 使用的展示截图。
@@ -43,6 +45,7 @@
 - `backend/data/uploads/`：本地上传文件，可能包含私有资料。
 - `.venv/`：本地 Python 虚拟环境。
 - `.runtime/`：本地服务 PID 和日志。
+- `backups/`：容器数据卷备份，可能包含账号、问答记录和上传资料。
 - `.pytest_cache/`、`__pycache__/`、`*.pyc`：测试和 Python 缓存。
 - `.env`、`.env.*`：真实 API Key 和本地配置，`.env.example` 除外。
 - `*.docx`：毕业设计报告、课程报告、学习手册等 Word 文件。
@@ -96,6 +99,8 @@
    .github/workflows/tests.yml
    ```
 
+   容器交付变更还要确认 `docker compose config`、镜像构建和容器烟测通过。
+
 7. 确认最终验收报告已纳入提交：
 
    ```text
@@ -114,7 +119,7 @@
 2. 只添加发布版应提交内容：
 
    ```powershell
-   git add README.md CHANGELOG.md LICENSE .gitignore .gitattributes .env.example .github start.ps1 backend frontend samples SECURITY.md CONTRIBUTING.md docs/screenshots docs/diagrams docs/releases docs/resume_project_card.md docs/portfolio_review_scorecard.md docs/architecture_decisions.md docs/interview_talking_points.md docs/interview_demo_checklist.md docs/demo_runbook.md docs/production_roadmap.md docs/rag_quality_gate.md docs/final_acceptance_report.md docs/github_release_checklist.md scripts/prepare_github_release.ps1 scripts/verify_project.ps1
+   git add README.md CHANGELOG.md LICENSE .gitignore .gitattributes .env.example .dockerignore Dockerfile compose.yaml .github start.ps1 backend frontend samples SECURITY.md CONTRIBUTING.md docs/screenshots docs/diagrams docs/releases docs/resume_project_card.md docs/portfolio_review_scorecard.md docs/architecture_decisions.md docs/interview_talking_points.md docs/interview_demo_checklist.md docs/demo_runbook.md docs/container_deployment.md docs/production_roadmap.md docs/rag_quality_gate.md docs/final_acceptance_report.md docs/github_release_checklist.md scripts/prepare_github_release.ps1 scripts/verify_project.ps1
    ```
 
 3. 提交：

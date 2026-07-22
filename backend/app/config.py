@@ -17,13 +17,25 @@ def positive_int_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def parse_runtime_environment(raw: str) -> str:
+    value = (raw or "development").strip().lower()
+    allowed = {"development", "test", "production"}
+    if value not in allowed:
+        choices = ", ".join(sorted(allowed))
+        raise ValueError(f"RAG_RUNTIME_ENV must be one of: {choices}")
+    return value
+
+
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
 UPLOAD_DIR = Path(os.environ.get("RAG_UPLOAD_DIR", DATA_DIR / "uploads"))
 DB_PATH = Path(os.environ.get("RAG_DB_PATH", DATA_DIR / "rag_platform.db"))
 
 APP_NAME = "企业知识库问答管理系统"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
+RUNTIME_ENV = parse_runtime_environment(os.environ.get("RAG_RUNTIME_ENV", "development"))
+BOOTSTRAP_ADMIN_USERNAME = os.environ.get("RAG_BOOTSTRAP_ADMIN_USERNAME", "admin").strip()
+BOOTSTRAP_ADMIN_PASSWORD = os.environ.get("RAG_BOOTSTRAP_ADMIN_PASSWORD", "")
 
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 120

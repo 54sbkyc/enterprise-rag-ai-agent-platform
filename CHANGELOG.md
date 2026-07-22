@@ -4,6 +4,37 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-22
+
+面向干净机器复现、安全启动和单实例部署验收的容器交付版本。
+
+### Added
+
+- 新增非 root Python 3.12 运行镜像与精简运行依赖，固定单 Uvicorn Worker 以匹配进程内 Agent 执行模型。
+- 新增 Docker Compose 交付，默认仅绑定本机端口，并启用持久卷、只读根文件系统、独立 tmpfs、能力裁剪和 `no-new-privileges`。
+- 新增 `development`、`test`、`production` 运行环境；生产空库必须提供至少 12 位首次管理员密码，不再创建公开演示账号。
+- 新增 `/api/health/live` 和访问 SQLite 的 `/api/health/ready`，数据库异常返回不包含内部路径的通用 `503`。
+- 新增容器部署、日志、备份和故障排查指南，数据卷备份目录默认不进入 Git 或镜像上下文。
+
+### Changed
+
+- GitHub Actions 新增容器实跑任务，验证 Compose、镜像构建、弱配置拒绝、非 root 身份、管理员登录和持久化重启。
+- 生产管理员仅在数据库不存在管理员时创建，容器重启或环境变量变化不会覆盖已有密码。
+- README、安全说明、贡献指南、架构决策、生产化路线图和发布治理统一纳入容器交付契约。
+
+### Validation
+
+- 136 项 pytest 自动化测试通过。
+- 12 条角色化黄金用例全部通过，Recall@K、MRR、答案、拒答与访问控制准确率均为 100%。
+- GitHub Actions 在干净 Ubuntu Runner 成功构建镜像，并通过生产空密码拒绝、UID `10001`、数据库就绪、管理员登录与持久卷重启烟测。
+- Compose 配置解析、锁定依赖、Python 编译、Markdown 链接、忽略规则和疑似密钥扫描通过。
+
+### Known Boundaries
+
+- 当前容器仍是 SQLite + 进程内 Agent 的单实例交付，不支持直接横向扩容。
+- 对外服务仍需要 HTTPS 反向代理、SSO/OIDC、速率限制、恶意文件扫描、集中日志与密钥托管。
+- 多实例部署前应迁移 PostgreSQL、对象存储和外部任务队列。
+
 ## [1.2.0] - 2026-07-22
 
 面向 AI 应用开发作品集的可靠性与安全增强版本。
@@ -75,6 +106,7 @@
 - Agent 当前同步执行；生产环境仍需异步队列、幂等、取消和人工审批。
 - 关键条件覆盖率是可配置启发式规则，需要用真实业务评测集持续校准。
 
-[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0

@@ -1,5 +1,6 @@
 .venv/
 .runtime/
+backups/
 .pytest_cache/
 __pycache__/
 *.pyc

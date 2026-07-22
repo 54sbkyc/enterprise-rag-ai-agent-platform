@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/54sbkyc/enterprise-rag-ai-agent-platform)](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases)
 [![License](https://img.shields.io/github/license/54sbkyc/enterprise-rag-ai-agent-platform)](LICENSE)
 
-一个面向 AI 应用开发岗位的 Python 全栈项目。当前角色化安全增强版本为 `v1.2.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志和 AI 调用可观测。
+一个面向 AI 应用开发岗位的 Python 全栈项目。当前安全容器交付版本为 `v1.3.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志和 AI 调用可观测。
 
 这个项目不是单纯的聊天页面，而是一个可以向面试官展示工程闭环的 AI 应用：能回答、能追溯、能评测、能治理、能看到成本和运行过程。
 
@@ -17,9 +17,10 @@
 | [面试讲解要点](docs/interview_talking_points.md) | 准备常见追问和演示讲法。 |
 | [AI 应用演示脚本](docs/demo_runbook.md) | 按 8 分钟主线展示 RAG、Agent、安全、评测和工程交付。 |
 | [面试演示检查清单](docs/interview_demo_checklist.md) | 面试前一天和前五分钟的环境、主线与故障预案检查。 |
+| [Docker 安全部署](docs/container_deployment.md) | 使用非 root 容器、持久卷、就绪检查和生产管理员引导完成可复现部署。 |
 | [生产化路线图](docs/production_roadmap.md) | 说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent 和 ACL 升级路径。 |
 | [最终验收报告](docs/final_acceptance_report.md) | 说明发布前验收、工程完整度和诚实边界。 |
-| [v1.2.0 版本说明](docs/releases/v1.2.0.md) | 查看角色化 RAG 安全、异步 Agent、质量门禁和验证结果。 |
+| [v1.3.0 版本说明](docs/releases/v1.3.0.md) | 查看安全容器交付、生产账号引导、就绪检查和 CI 实跑结果。 |
 | [变更记录](CHANGELOG.md) | 按版本追踪公开仓库的重要变化。 |
 | [GitHub 发布清单](docs/github_release_checklist.md) | 确认哪些文件该提交、哪些本地资料不进入公开仓库。 |
 | [安全说明](SECURITY.md) | 说明密钥、本地数据、Prompt 注入、权限控制和 AI 安全边界。 |
@@ -47,6 +48,7 @@
 | 质量评测 | 12 条角色化黄金用例，支持 Recall@K、MRR、答案正确率、拒答准确率、访问控制准确率和报告导出 |
 | 回归门禁 | 版本化黄金集、SHA-256 指纹、批准/历史基线、阈值判定和 CI 失败退出码 |
 | 企业安全 | 角色权限、文档密级过滤、受限主题保守拒答、Prompt 注入拦截、敏感信息脱敏、审计日志 |
+| 可复现部署 | 非 root Docker 镜像、只读根文件系统、强密码引导、持久卷、数据库就绪检查和容器 CI 烟测 |
 | 产品闭环 | 低置信度问题、员工反馈和 Agent 结果可沉淀为知识缺口，形成知识库治理流程 |
 | 全栈实现 | FastAPI + SQLite 后端，原生 HTML/CSS/JavaScript 前端，自动化测试覆盖核心流程 |
 
@@ -64,6 +66,7 @@
 - 质量治理：使用只读角色化黄金数据集执行召回、排序、答案、拒答和访问控制评测，记录绝对阈值、批准/历史基线变化；问答反馈、知识缺口和健康体检形成后续治理闭环。
 - 安全审计：记录问答日志、拦截原因、管理操作、文档变更和评测结果。
 - 运行时加固：会话默认 12 小时过期，上传默认限制 10 MB，跨域默认关闭且拒绝通配来源。
+- 容器交付：生产配置禁止空密码和默认演示账号，镜像以非 root 单 Worker 运行，并通过持久卷和数据库就绪端点支持稳定重启。
 
 ## 技术栈
 
@@ -75,6 +78,7 @@
 | AI 接入 | 本地抽取式回答，兼容 OpenAI Chat Completions 协议 |
 | 前端 | HTML, CSS, JavaScript |
 | 测试 | pytest, FastAPI TestClient, Playwright 浏览器验证 |
+| 交付 | Docker, Docker Compose, GitHub Actions 容器烟测 |
 
 ## 架构概览
 
@@ -133,11 +137,26 @@ http://127.0.0.1:8001
 | 管理员 | `admin` | `admin123` |
 | 普通员工 | `employee` | `user123` |
 
+以上账号只用于本地 `development` 演示。Docker Compose 强制使用 `production` 模式，不会创建默认普通员工，并要求首次启动时提供至少 12 位管理员密码。
+
 可选导入企业样例文档：
 
 ```powershell
 .\.venv\Scripts\python.exe backend\seed_enterprise_documents.py
 ```
+
+## Docker 部署
+
+在安装 Docker Desktop 后，从模板创建不提交到 Git 的本地配置，并设置 `RAG_BOOTSTRAP_ADMIN_PASSWORD`：
+
+```powershell
+Copy-Item .env.example .env
+docker compose config
+docker compose up --build -d
+Invoke-RestMethod http://127.0.0.1:8000/api/health/ready
+```
+
+容器默认只绑定 `127.0.0.1`，使用非 root 用户、只读根文件系统和命名数据卷。完整的密码规则、运行命令、日志、备份步骤与单实例边界见 [Docker 安全部署指南](docs/container_deployment.md)。
 
 ## 大模型配置
 
@@ -190,7 +209,7 @@ python -m app.eval_gate_cli --output ..\.runtime\evaluation-gate-report.json
 
 ## CI 与生产化
 
-仓库提供 GitHub Actions 工作流 [.github/workflows/tests.yml](.github/workflows/tests.yml)，推送到 `main`/`master` 或提交 Pull Request 时会运行 pytest 和确定性 RAG 质量门禁，并上传 JSON 评测报告。代码测试通过但 AI 指标低于阈值时，CI 仍会失败。
+仓库提供 GitHub Actions 工作流 [.github/workflows/tests.yml](.github/workflows/tests.yml)，推送到 `main`/`master` 或提交 Pull Request 时会运行 pytest、确定性 RAG 质量门禁和容器烟测，并上传 JSON 评测报告。容器烟测还会验证生产空密码启动失败、非 root 身份、数据库就绪、管理员登录和持久卷重启。代码测试通过但 AI 指标或部署契约不达标时，CI 仍会失败。
 
 生产化演进路径见 [docs/production_roadmap.md](docs/production_roadmap.md)，重点覆盖 embedding + pgvector + rerank、PostgreSQL、异步 Agent、部门级 ACL、观测与成本治理等升级方向。
 
@@ -210,6 +229,9 @@ python -m app.eval_gate_cli --output ..\.runtime\evaluation-gate-report.json
 
 ```text
 enterprise-rag-qa
+├─ Dockerfile                 # 非 root 单 Worker 运行镜像
+├─ compose.yaml               # 安全默认项与持久数据卷
+├─ .dockerignore              # 排除密钥、本地数据和开发资料
 ├─ backend
 │  ├─ app
 │  │  ├─ main.py              # FastAPI 路由与业务接口
@@ -228,13 +250,15 @@ enterprise-rag-qa
 │  ├─ evaluation             # 版本化 RAG 黄金数据集
 │  ├─ tests                  # pytest 测试
 │  ├─ check_requirements.py  # 锁定依赖完整性检查
-│  └─ requirements.txt
+│  ├─ requirements-runtime.txt # 容器精简运行依赖
+│  └─ requirements.txt        # 本地开发与测试依赖
 ├─ frontend
 │  ├─ index.html
 │  ├─ app.js
 │  └─ styles.css
 ├─ docs
 │  ├─ screenshots
+│  ├─ container_deployment.md
 │  ├─ rag_quality_gate.md
 │  └─ interview_talking_points.md
 ├─ samples

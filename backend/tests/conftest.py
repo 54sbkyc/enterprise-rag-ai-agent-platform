@@ -15,6 +15,7 @@ if str(BACKEND_DIR) not in sys.path:
 TEST_ROOT = Path(tempfile.mkdtemp(prefix="enterprise-rag-tests-"))
 os.environ["RAG_DB_PATH"] = str(TEST_ROOT / "test.db")
 os.environ["RAG_UPLOAD_DIR"] = str(TEST_ROOT / "uploads")
+os.environ["RAG_RUNTIME_ENV"] = "test"
 
 from app.auth import hash_password  # noqa: E402
 from app.db import get_conn, init_db, utc_now  # noqa: E402

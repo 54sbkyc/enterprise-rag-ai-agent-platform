@@ -4,12 +4,18 @@ from pathlib import Path
 import pytest
 
 from app import main
-from app.config import APP_VERSION, MAX_UPLOAD_BYTES, SESSION_TTL_HOURS, parse_cors_origins
+from app.config import (
+    APP_VERSION,
+    MAX_UPLOAD_BYTES,
+    SESSION_TTL_HOURS,
+    parse_cors_origins,
+    parse_runtime_environment,
+)
 from app.db import get_conn
 
 
 def test_release_version_and_secure_runtime_defaults():
-    assert APP_VERSION == "1.2.0"
+    assert APP_VERSION == "1.3.0"
     assert MAX_UPLOAD_BYTES == 10 * 1024 * 1024
     assert SESSION_TTL_HOURS == 12
     assert parse_cors_origins("") == ()
@@ -19,6 +25,10 @@ def test_release_version_and_secure_runtime_defaults():
     )
     with pytest.raises(ValueError, match="wildcard"):
         parse_cors_origins("*")
+    assert parse_runtime_environment("") == "development"
+    assert parse_runtime_environment(" PRODUCTION ") == "production"
+    with pytest.raises(ValueError, match="RAG_RUNTIME_ENV"):
+        parse_runtime_environment("staging-ish")
 
 
 def test_expired_session_is_rejected_and_removed(client, admin_headers):

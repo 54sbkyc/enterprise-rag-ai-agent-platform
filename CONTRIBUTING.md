@@ -16,6 +16,8 @@ PowerShell 下运行：
 http://127.0.0.1:8000
 ```
 
+需要验证干净机器部署时，按 [Docker 安全部署](docs/container_deployment.md) 配置首次管理员密码，再运行 `docker compose up --build -d`。容器改动必须同时验证生产空密码拒绝、就绪端点、非 root 身份和管理员登录。
+
 ## 运行测试
 
 修改后至少运行：
@@ -57,6 +59,13 @@ python -m pytest
 
 这个脚本不会删除、移动或打包文件。它会依次完成 Python 编译检查、依赖一致性检查、全量测试，以及必需文件、`.gitignore`、Markdown 链接和疑似密钥格式检查。
 
+涉及 `Dockerfile` 或 `compose.yaml` 时，还应运行：
+
+```powershell
+docker compose config
+docker build --tag enterprise-rag-ai-agent-platform:local .
+```
+
 ## 文档同步
 
 如果你修改了功能或项目定位，请同步检查：
@@ -66,6 +75,7 @@ python -m pytest
 - [docs/interview_talking_points.md](docs/interview_talking_points.md)
 - [docs/demo_runbook.md](docs/demo_runbook.md)
 - [docs/production_roadmap.md](docs/production_roadmap.md)
+- [docs/container_deployment.md](docs/container_deployment.md)
 - [docs/final_acceptance_report.md](docs/final_acceptance_report.md)
 - [docs/github_release_checklist.md](docs/github_release_checklist.md)
 
