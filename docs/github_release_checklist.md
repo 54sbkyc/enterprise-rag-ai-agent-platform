@@ -16,7 +16,7 @@
 - `start.ps1`：一键创建虚拟环境、安装依赖、启动服务。
 - `backend/app/`：FastAPI 后端、RAG、Agent、权限、安全、评测、可观测等核心代码。
 - `backend/app/embeddings.py`、`backend/app/agent_planner.py`、`backend/app/evaluation_*.py`：向量索引、受控规划、版本化数据集和质量门禁核心实现。
-- `backend/evaluation/golden_cases.v1.json`、`backend/evaluation/approved_baseline.v1.json`：进入代码评审的只读 RAG 黄金数据集与批准基线。
+- `backend/evaluation/golden_cases.v2.json`、`backend/evaluation/approved_baseline.v2.json`：进入代码评审的 12 条角色化 RAG 黄金数据集与批准基线；v1 文件仅保留为历史快照。
 - `backend/tests/`：pytest 测试，证明核心流程可回归。
 - `backend/requirements.txt`：后端依赖。
 - `backend/seed_enterprise_documents.py`：可复现的企业样例文档导入脚本。

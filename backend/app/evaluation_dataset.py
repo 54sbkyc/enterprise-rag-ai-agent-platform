@@ -3,9 +3,16 @@ import json
 from pathlib import Path
 
 
-DEFAULT_DATASET_PATH = Path(__file__).resolve().parents[1] / "evaluation" / "golden_cases.v1.json"
-DEFAULT_BASELINE_PATH = Path(__file__).resolve().parents[1] / "evaluation" / "approved_baseline.v1.json"
-BASELINE_METRICS = ("recall_at_k", "mrr", "answer_accuracy", "abstention_accuracy")
+DEFAULT_DATASET_PATH = Path(__file__).resolve().parents[1] / "evaluation" / "golden_cases.v2.json"
+DEFAULT_BASELINE_PATH = Path(__file__).resolve().parents[1] / "evaluation" / "approved_baseline.v2.json"
+BASELINE_METRICS = (
+    "recall_at_k",
+    "mrr",
+    "answer_accuracy",
+    "abstention_accuracy",
+    "access_control_accuracy",
+)
+ALLOWED_ACTOR_ROLES = {"admin", "tech", "employee"}
 
 
 class EvaluationDatasetError(ValueError):
@@ -36,10 +43,14 @@ def load_evaluation_dataset(path: Path | None = None) -> dict:
         if case_key in seen_keys:
             raise EvaluationDatasetError(f"评测用例 key 重复：{case_key}")
         seen_keys.add(case_key)
+        actor_role = str(raw_case.get("actor_role", "admin")).strip().lower()
+        if actor_role not in ALLOWED_ACTOR_ROLES:
+            raise EvaluationDatasetError(f"第 {index} 个评测用例的 actor_role 无效：{actor_role}")
         normalized_cases.append(
             {
                 "key": case_key,
                 "category": str(raw_case.get("category", "general")).strip() or "general",
+                "actor_role": actor_role,
                 "question": question,
                 "expected_keywords": _string_list(raw_case.get("expected_keywords"), index, "expected_keywords"),
                 "expected_documents": _string_list(raw_case.get("expected_documents"), index, "expected_documents"),
@@ -73,7 +84,7 @@ def load_evaluation_baseline(path: Path | None = None) -> dict:
     if not isinstance(top_k, int) or not 1 <= top_k <= 10:
         raise EvaluationDatasetError("批准基线的 top_k 必须在 1 到 10 之间")
     if not isinstance(raw_metrics, dict) or set(raw_metrics) != set(BASELINE_METRICS):
-        raise EvaluationDatasetError("批准基线必须包含完整的四项门禁指标")
+        raise EvaluationDatasetError("批准基线必须包含完整的五项门禁指标")
     metrics = {}
     for metric in BASELINE_METRICS:
         try:
@@ -111,6 +122,7 @@ def cases_fingerprint(cases: list[dict]) -> str:
         {
             "key": str(item.get("case_key") or f"custom-{item.get('id', index)}"),
             "category": str(item.get("category") or "general"),
+            "actor_role": str(item.get("actor_role") or "admin"),
             "question": str(item["question"]),
             "expected_keywords": list(item.get("expected_keywords") or []),
             "expected_documents": list(item.get("expected_documents") or []),

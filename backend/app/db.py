@@ -46,6 +46,7 @@ def init_db() -> None:
         _ensure_column(conn, "evaluation_cases", "case_key", "TEXT")
         _ensure_column(conn, "evaluation_cases", "dataset_version", "TEXT NOT NULL DEFAULT 'custom'")
         _ensure_column(conn, "evaluation_cases", "category", "TEXT NOT NULL DEFAULT 'general'")
+        _ensure_column(conn, "evaluation_cases", "actor_role", "TEXT NOT NULL DEFAULT 'admin'")
         _ensure_column(conn, "evaluation_cases", "should_answer", "INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "evaluation_cases", "updated_at", "TEXT")
         _ensure_column(conn, "batch_eval_runs", "dataset_version", "TEXT NOT NULL DEFAULT 'custom'")
@@ -55,19 +56,22 @@ def init_db() -> None:
         _ensure_column(conn, "batch_eval_runs", "mrr", "REAL NOT NULL DEFAULT 0")
         _ensure_column(conn, "batch_eval_runs", "answer_accuracy", "REAL NOT NULL DEFAULT 0")
         _ensure_column(conn, "batch_eval_runs", "abstention_accuracy", "REAL NOT NULL DEFAULT 0")
+        _ensure_column(conn, "batch_eval_runs", "access_control_accuracy", "REAL NOT NULL DEFAULT 0")
         _ensure_column(conn, "batch_eval_runs", "gate_status", "TEXT NOT NULL DEFAULT 'not_evaluated'")
         _ensure_column(conn, "batch_eval_runs", "thresholds_json", "TEXT NOT NULL DEFAULT '{}'")
-        _ensure_column(conn, "batch_eval_runs", "minimum_cases", "INTEGER NOT NULL DEFAULT 5")
+        _ensure_column(conn, "batch_eval_runs", "minimum_cases", "INTEGER NOT NULL DEFAULT 10")
         _ensure_column(conn, "batch_eval_runs", "max_regression", "REAL NOT NULL DEFAULT 0.05")
         _ensure_column(conn, "batch_eval_runs", "failed_metrics_json", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "batch_eval_runs", "metric_deltas_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "batch_eval_runs", "baseline_run_id", "INTEGER")
         _ensure_column(conn, "batch_eval_runs", "baseline_reference", "TEXT")
         _ensure_column(conn, "batch_eval_results", "should_answer", "INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "batch_eval_results", "actor_role", "TEXT NOT NULL DEFAULT 'admin'")
         _ensure_column(conn, "batch_eval_results", "retrieval_recall", "REAL")
         _ensure_column(conn, "batch_eval_results", "reciprocal_rank", "REAL")
         _ensure_column(conn, "batch_eval_results", "answer_correct", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "batch_eval_results", "abstention_correct", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "batch_eval_results", "access_control_correct", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "is_active", "INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "knowledge_gaps", "assigned_to", "INTEGER")
         _ensure_column(conn, "knowledge_gaps", "resolution_action", "TEXT NOT NULL DEFAULT ''")
@@ -154,22 +158,27 @@ def _seed_evaluation_cases(conn: sqlite3.Connection) -> None:
     }
     for case in dataset["cases"]:
         candidates = [case["question"], *legacy_questions.get(case["key"], [])]
-        placeholders = ",".join("?" for _ in candidates)
         existing = conn.execute(
-            f"""
-            SELECT id
-            FROM evaluation_cases
-            WHERE case_key = ? OR question IN ({placeholders})
-            ORDER BY CASE WHEN case_key = ? THEN 0 WHEN question = ? THEN 1 ELSE 2 END, id
-            LIMIT 1
-            """,
-            (case["key"], *candidates, case["key"], case["question"]),
+            "SELECT id FROM evaluation_cases WHERE case_key = ? LIMIT 1",
+            (case["key"],),
         ).fetchone()
+        if not existing:
+            placeholders = ",".join("?" for _ in candidates)
+            existing = conn.execute(
+                f"""
+                SELECT id
+                FROM evaluation_cases
+                WHERE case_key IS NULL AND question IN ({placeholders})
+                ORDER BY CASE WHEN question = ? THEN 0 ELSE 1 END, id
+                LIMIT 1
+                """,
+                (*candidates, case["question"]),
+            ).fetchone()
         if existing:
             conn.execute(
                 """
                 UPDATE evaluation_cases
-                SET case_key = ?, dataset_version = ?, category = ?, question = ?,
+                SET case_key = ?, dataset_version = ?, category = ?, actor_role = ?, question = ?,
                     expected_keywords = ?, expected_documents = ?, should_answer = ?, updated_at = ?
                 WHERE id = ?
                 """,
@@ -177,6 +186,7 @@ def _seed_evaluation_cases(conn: sqlite3.Connection) -> None:
                     case["key"],
                     dataset["version"],
                     case["category"],
+                    case["actor_role"],
                     case["question"],
                     json.dumps(case["expected_keywords"], ensure_ascii=False),
                     json.dumps(case["expected_documents"], ensure_ascii=False),
@@ -189,15 +199,16 @@ def _seed_evaluation_cases(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             INSERT INTO evaluation_cases(
-                case_key, dataset_version, category, question,
+                case_key, dataset_version, category, actor_role, question,
                 expected_keywords, expected_documents, should_answer, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 case["key"],
                 dataset["version"],
                 case["category"],
+                case["actor_role"],
                 case["question"],
                 json.dumps(case["expected_keywords"], ensure_ascii=False),
                 json.dumps(case["expected_documents"], ensure_ascii=False),

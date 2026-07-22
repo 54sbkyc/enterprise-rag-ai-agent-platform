@@ -70,6 +70,20 @@ def test_fastapi_uses_lifespan_instead_of_deprecated_startup_event():
     assert "lifespan=lifespan" in main
 
 
+def test_evaluation_ui_exposes_role_aware_access_control_metrics():
+    script = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    markup = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "frontend" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="caseActorRole"' in markup
+    assert 'class="panel quality-gate-panel"' in markup
+    assert 'access_control_accuracy: "访问控制准确率"' in script
+    assert 'actor_role: $("#caseActorRole").value' in script
+    assert 'data-case-role="${item.id}"' in script
+    assert "#page-evaluation .quality-gate-panel" in stylesheet
+    assert "grid-column: span 6" in stylesheet
+
+
 def test_project_name_is_unified_across_runtime_and_shell():
     config = (ROOT / "backend" / "app" / "config.py").read_text(encoding="utf-8")
     markup = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")

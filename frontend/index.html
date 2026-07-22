@@ -477,7 +477,7 @@
               <div class="panel-title"><span>评测得分分布</span></div>
               <div id="scoreChart" class="bar-chart"></div>
             </article>
-            <article class="panel">
+            <article class="panel quality-gate-panel">
               <div class="panel-title">
                 <span>最新质量门禁</span>
                 <span id="evaluationDatasetBadge" class="badge muted">加载中</span>
@@ -523,6 +523,11 @@
               <input id="caseQuestion" class="input" placeholder="评测问题" />
               <input id="caseKeywords" class="input" placeholder="期望关键词，逗号分隔" />
               <input id="caseDocuments" class="input" placeholder="期望来源文档，逗号分隔" />
+              <select id="caseActorRole" class="input" aria-label="执行角色">
+                <option value="employee">普通员工</option>
+                <option value="tech">技术员工</option>
+                <option value="admin">管理员</option>
+              </select>
               <label class="inline-check"><input id="caseShouldAnswer" type="checkbox" checked /> 该问题应有答案</label>
               <button id="createCaseBtn" class="primary-btn">新增用例</button>
             </div>

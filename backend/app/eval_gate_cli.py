@@ -9,12 +9,13 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the deterministic enterprise RAG quality gate.")
     parser.add_argument("--top-k", type=int, default=5)
-    parser.add_argument("--minimum-cases", type=int, default=5)
+    parser.add_argument("--minimum-cases", type=int, default=10)
     parser.add_argument("--max-regression", type=float, default=0.05)
     parser.add_argument("--min-recall", type=float, default=0.80)
     parser.add_argument("--min-mrr", type=float, default=0.75)
     parser.add_argument("--min-answer-accuracy", type=float, default=0.80)
     parser.add_argument("--min-abstention-accuracy", type=float, default=0.80)
+    parser.add_argument("--min-access-control-accuracy", type=float, default=1.0)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--baseline", type=Path, help="Use a specific approved baseline JSON file.")
     parser.add_argument(
@@ -66,6 +67,7 @@ def main() -> int:
                     mrr=args.min_mrr,
                     answer_accuracy=args.min_answer_accuracy,
                     abstention_accuracy=args.min_abstention_accuracy,
+                    access_control_accuracy=args.min_access_control_accuracy,
                 ),
             ),
             dict(admin),
@@ -93,14 +95,16 @@ def main() -> int:
         "failed_cases": [
             {
                 "case_key": item.get("case_key"),
+                "actor_role": item["actor_role"],
                 "question": item["question"],
                 "answer_correct": item["answer_correct"],
                 "abstention_correct": item["abstention_correct"],
+                "access_control_correct": item["access_control_correct"],
                 "retrieval_recall": item["retrieval_recall"],
                 "reciprocal_rank": item["reciprocal_rank"],
             }
             for item in result["results"]
-            if not item["answer_correct"] or not item["abstention_correct"]
+            if not item["answer_correct"] or not item["abstention_correct"] or not item["access_control_correct"]
         ],
     }
     if args.output:
@@ -124,6 +128,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         "min_mrr",
         "min_answer_accuracy",
         "min_abstention_accuracy",
+        "min_access_control_accuracy",
     ):
         value = getattr(args, name)
         if not 0 <= value <= 1:
@@ -149,6 +154,7 @@ def _print_report(report: dict) -> None:
     print(f"MRR: {summary['mrr']:.4f}")
     print(f"Answer accuracy: {summary['answer_accuracy']:.2%}")
     print(f"Abstention accuracy: {summary['abstention_accuracy']:.2%}")
+    print(f"Access control accuracy: {summary['access_control_accuracy']:.2%}")
     if gate.get("baseline_reference"):
         print(f"Approved baseline: {gate['baseline_reference']}")
     if gate["failed_metrics"]:

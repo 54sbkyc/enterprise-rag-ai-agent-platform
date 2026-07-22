@@ -37,7 +37,7 @@ python check_requirements.py
 python -m app.eval_gate_cli --output ..\.runtime\evaluation-gate-report.json
 ```
 
-门禁失败时不要通过降低阈值掩盖退化；先查看失败指标和用例，再说明算法调整或黄金集版本升级的理由。
+门禁失败时不要通过降低阈值掩盖退化；先查看失败指标和用例，再说明算法调整或黄金集版本升级的理由。新增用例时必须明确 `actor_role`，权限场景还要验证低权限角色没有收到超出密级范围的引用。
 
 如果只改了发布治理或文档，可以先运行相关静态测试，再跑全量测试：
 

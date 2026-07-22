@@ -1494,6 +1494,18 @@ textarea {
   margin-bottom: 16px;
 }
 
+#page-evaluation .chart-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+#page-evaluation .chart-grid .panel:not(.quality-gate-panel) {
+  grid-column: span 2;
+}
+
+#page-evaluation .quality-gate-panel {
+  grid-column: span 6;
+}
+
 .stat-card {
   min-height: 112px;
   padding: 14px;
@@ -1778,6 +1790,15 @@ textarea {
   .user-edit {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  #page-evaluation .chart-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #page-evaluation .chart-grid .panel:not(.quality-gate-panel),
+  #page-evaluation .quality-gate-panel {
+    grid-column: auto;
   }
 
   .metrics {

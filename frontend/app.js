@@ -107,6 +107,7 @@ const evaluationMetricLabels = {
   mrr: "MRR",
   answer_accuracy: "答案正确率",
   abstention_accuracy: "拒答准确率",
+  access_control_accuracy: "访问控制准确率",
 };
 
 const REMEMBER_LOGIN_KEY = "enterprise_kb_remember_login";
@@ -330,7 +331,7 @@ async function loadEvaluationDataset() {
   const badge = $("#evaluationDatasetBadge");
   if (!badge) return;
   badge.textContent = `${state.evaluationDataset.version} · ${state.evaluationDataset.case_count} 条`;
-  badge.title = `数据集指纹 ${state.evaluationDataset.fingerprint} · 批准基线 ${state.evaluationDataset.approved_baseline?.version || "未配置"}`;
+  badge.title = `数据集指纹 ${state.evaluationDataset.fingerprint} · 角色 ${state.evaluationDataset.roles.map((role) => roleLabels[role] || role).join("/")} · 批准基线 ${state.evaluationDataset.approved_baseline?.version || "未配置"}`;
 }
 
 async function loadDashboard() {
@@ -812,17 +813,21 @@ function renderEvaluationCases() {
       (item) => {
         const readonly = item.is_golden;
         const sourceLabel = readonly ? `${item.dataset_version} · ${item.category}` : `自定义 · ${item.category}`;
+        const actorRole = item.actor_role || "admin";
         return `
         <div class="compact-item">
           <div class="panel-title case-title">
             <strong>用例 #${item.id}</strong>
             <span class="badge ${readonly ? "" : "muted"}">${readonly ? "黄金用例" : "自定义"}</span>
           </div>
-          <span class="case-source">${escapeHtml(sourceLabel)}${item.case_key ? ` · ${escapeHtml(item.case_key)}` : ""}</span>
+          <span class="case-source">${escapeHtml(sourceLabel)} · ${escapeHtml(roleLabels[actorRole] || actorRole)}${item.case_key ? ` · ${escapeHtml(item.case_key)}` : ""}</span>
           <div class="case-form">
             <input class="input" data-case-question="${item.id}" value="${escapeHtml(item.question)}" ${readonly ? "disabled" : ""} />
             <input class="input" data-case-keywords="${item.id}" value="${escapeHtml(item.expected_keywords.join(", "))}" ${readonly ? "disabled" : ""} />
             <input class="input" data-case-documents="${item.id}" value="${escapeHtml(item.expected_documents.join(", "))}" ${readonly ? "disabled" : ""} />
+            <select class="input" aria-label="执行角色" data-case-role="${item.id}" ${readonly ? "disabled" : ""}>
+              ${["employee", "tech", "admin"].map((role) => `<option value="${role}" ${actorRole === role ? "selected" : ""}>${roleLabels[role]}</option>`).join("")}
+            </select>
             <label class="inline-check"><input type="checkbox" data-case-should-answer="${item.id}" ${item.should_answer ? "checked" : ""} ${readonly ? "disabled" : ""} /> 应有答案</label>
             ${readonly ? "" : `<div class="compact-actions"><button class="ghost-btn small-btn" data-case-save="${item.id}">保存</button><button class="delete-btn" title="删除用例" data-case-delete="${item.id}">×</button></div>`}
           </div>
@@ -843,12 +848,14 @@ async function createEvaluationCase() {
         question: $("#caseQuestion").value.trim(),
         expected_keywords: splitValue($("#caseKeywords").value),
         expected_documents: splitValue($("#caseDocuments").value),
+        actor_role: $("#caseActorRole").value,
         should_answer: $("#caseShouldAnswer").checked,
       }),
     });
     $("#caseQuestion").value = "";
     $("#caseKeywords").value = "";
     $("#caseDocuments").value = "";
+    $("#caseActorRole").value = "employee";
     $("#caseShouldAnswer").checked = true;
     setText("#caseStatus", "新增成功。");
     await loadEvaluationCases();
@@ -865,6 +872,7 @@ async function saveEvaluationCase(id) {
       question: document.querySelector(`[data-case-question="${id}"]`)?.value.trim(),
       expected_keywords: splitValue(document.querySelector(`[data-case-keywords="${id}"]`)?.value || ""),
       expected_documents: splitValue(document.querySelector(`[data-case-documents="${id}"]`)?.value || ""),
+      actor_role: document.querySelector(`[data-case-role="${id}"]`)?.value || "admin",
       should_answer: document.querySelector(`[data-case-should-answer="${id}"]`)?.checked ?? true,
     }),
   });
@@ -1338,6 +1346,7 @@ function renderLatestQualityGate(latest) {
     <span>MRR：${Number(latest.mrr || 0).toFixed(3)}</span>
     <span>答案正确率：${percentText(latest.answer_accuracy)}</span>
     <span>拒答准确率：${percentText(latest.abstention_accuracy)}</span>
+    <span>访问控制准确率：${percentText(latest.access_control_accuracy)}</span>
     ${failed.length ? `<span class="gate-failure">未通过：${escapeHtml(failed.join("、"))}</span>` : ""}
   `;
 }
@@ -1363,7 +1372,7 @@ function renderBatchRuns() {
             <span class="badge ${gatePassed ? "" : "danger"}">${gatePassed ? "通过" : "失败"}</span>
           </div>
           <span>${escapeHtml(run.dataset_version)} · ${escapeHtml(run.dataset_hash.slice(0, 12))} · Top ${run.top_k} · ${escapeHtml(run.baseline_reference || (run.baseline_run_id ? `历史运行 #${run.baseline_run_id}` : "无兼容基线"))}</span>
-          <span>${run.total} 条 · Recall@K ${percentText(run.recall_at_k)} · MRR ${Number(run.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(run.answer_accuracy)} · 拒答准确率 ${percentText(run.abstention_accuracy)} · ${formatDate(run.created_at)}</span>
+          <span>${run.total} 条 · Recall@K ${percentText(run.recall_at_k)} · MRR ${Number(run.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(run.answer_accuracy)} · 拒答准确率 ${percentText(run.abstention_accuracy)} · 访问控制 ${percentText(run.access_control_accuracy)} · ${formatDate(run.created_at)}</span>
           ${deltas ? `<span>相对基线：${escapeHtml(deltas)}</span>` : ""}
           <div class="compact-actions">
             <button class="ghost-btn small-btn" data-export-md="${run.id}">导出 Markdown</button>
@@ -2252,7 +2261,7 @@ async function runBatchEvaluation() {
     });
     setText(
       "#evalResult",
-      `${result.gate.status === "passed" ? "门禁通过" : `门禁失败：${result.gate.failed_metrics.map((metric) => evaluationMetricLabels[metric] || metric).join("、")}`} · ${result.summary.total} 条 · Recall@K ${percentText(result.summary.recall_at_k)} · MRR ${Number(result.summary.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(result.summary.answer_accuracy)} · 拒答准确率 ${percentText(result.summary.abstention_accuracy)}`,
+      `${result.gate.status === "passed" ? "门禁通过" : `门禁失败：${result.gate.failed_metrics.map((metric) => evaluationMetricLabels[metric] || metric).join("、")}`} · ${result.summary.total} 条 · Recall@K ${percentText(result.summary.recall_at_k)} · MRR ${Number(result.summary.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(result.summary.answer_accuracy)} · 拒答准确率 ${percentText(result.summary.abstention_accuracy)} · 访问控制 ${percentText(result.summary.access_control_accuracy)}`,
     );
     await refreshEvaluationPage();
     await loadLogs();

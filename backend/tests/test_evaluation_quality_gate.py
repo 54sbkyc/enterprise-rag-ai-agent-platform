@@ -58,10 +58,11 @@ def test_versioned_golden_dataset_is_valid_and_stable():
     dataset = load_evaluation_dataset()
     baseline = load_evaluation_baseline()
 
-    assert dataset["version"] == "enterprise-rag-golden-v1"
-    assert len(dataset["cases"]) == 5
+    assert dataset["version"] == "enterprise-rag-golden-v2"
+    assert len(dataset["cases"]) == 12
     assert len(dataset["fingerprint"]) == 64
-    assert len({item["key"] for item in dataset["cases"]}) == 5
+    assert len({item["key"] for item in dataset["cases"]}) == 12
+    assert {item["actor_role"] for item in dataset["cases"]} == {"admin", "tech", "employee"}
     assert baseline["dataset_version"] == dataset["version"]
     assert baseline["dataset_fingerprint"] == dataset["fingerprint"]
     assert baseline["top_k"] == 5
@@ -75,6 +76,7 @@ def test_quality_gate_reports_threshold_and_regression_failures():
         "mrr": 0.80,
         "answer_accuracy": 0.75,
         "abstention_accuracy": 1.0,
+        "access_control_accuracy": 1.0,
     }
     baseline = {
         "id": 11,
@@ -82,6 +84,7 @@ def test_quality_gate_reports_threshold_and_regression_failures():
         "mrr": 0.82,
         "answer_accuracy": 0.90,
         "abstention_accuracy": 1.0,
+        "access_control_accuracy": 1.0,
     }
 
     gate = evaluate_quality_gate(summary, QualityGatePolicy(), baseline)
@@ -102,6 +105,7 @@ def test_batch_gate_automatically_uses_latest_compatible_baseline(client, admin_
             "mrr": 1.0,
             "answer_accuracy": 1.0,
             "abstention_accuracy": 1.0,
+            "access_control_accuracy": 1.0,
         },
     }
 
@@ -139,23 +143,40 @@ def test_golden_cases_are_read_only_but_custom_cases_remain_editable(client, adm
     created = client.post(
         "/api/evaluation/cases",
         headers=admin_headers,
-        json={"question": "自定义测试问题", "category": "regression"},
+        json={"question": "自定义测试问题", "category": "regression", "actor_role": "employee"},
+    )
+    default_role = client.post(
+        "/api/evaluation/cases",
+        headers=admin_headers,
+        json={"question": "默认角色测试问题", "category": "regression"},
+    )
+    preserved_role = client.patch(
+        f"/api/evaluation/cases/{default_role.json()['id']}",
+        headers=admin_headers,
+        json={"question": "默认角色测试问题 V2", "category": "regression"},
     )
     updated = client.patch(
         f"/api/evaluation/cases/{created.json()['id']}",
         headers=admin_headers,
-        json={"question": "自定义测试问题 V2", "category": "regression"},
+        json={"question": "自定义测试问题 V2", "category": "regression", "actor_role": "tech"},
     )
     golden_gate = client.post("/api/evaluation/batch/run", headers=admin_headers, json={})
 
     assert blocked.status_code == 409
     assert created.status_code == 200
     assert created.json()["is_golden"] is False
+    assert created.json()["actor_role"] == "employee"
+    assert default_role.status_code == 200
+    assert default_role.json()["actor_role"] == "employee"
+    assert preserved_role.status_code == 200
+    assert preserved_role.json()["actor_role"] == "employee"
     assert updated.status_code == 200
     assert updated.json()["question"] == "自定义测试问题 V2"
+    assert updated.json()["actor_role"] == "tech"
     assert golden_gate.status_code == 200
-    assert golden_gate.json()["summary"]["total"] == 5
-    assert golden_gate.json()["gate"]["baseline_reference"] == "enterprise-rag-approved-baseline-v1"
+    assert golden_gate.json()["summary"]["total"] == 12
+    assert golden_gate.json()["summary"]["access_control_accuracy"] == 1.0
+    assert golden_gate.json()["gate"]["baseline_reference"] == "enterprise-rag-approved-baseline-v2"
 
 
 def test_ci_runs_and_uploads_the_quality_gate_report():

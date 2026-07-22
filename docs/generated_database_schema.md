@@ -48,12 +48,14 @@
 | `evaluations` | `citation_hit` | 期望来源文档命中率。 |
 | `evaluation_cases` | `case_key` | 黄金用例的稳定唯一标识；自定义用例为空。 |
 | `evaluation_cases` | `dataset_version` | 用例所属黄金集版本或 `custom`。 |
+| `evaluation_cases` | `actor_role` | 执行用例时采用的管理员、技术员工或普通员工角色。 |
 | `batch_eval_runs` | `avg_score` | 批量评测平均得分。 |
 | `batch_eval_runs` | `avg_confidence` | 批量评测平均置信度。 |
 | `batch_eval_runs` | `citation_hit_rate` | 批量评测引用命中率。 |
 | `batch_eval_runs` | `dataset_hash` | 规范化用例内容的 SHA-256 指纹，用于匹配兼容基线。 |
 | `batch_eval_runs` | `gate_status` | 绝对阈值和相对回退检查后的门禁结论。 |
-| `batch_eval_runs` | `thresholds_json` | Recall@K、MRR、答案和拒答准确率阈值。 |
+| `batch_eval_runs` | `thresholds_json` | Recall@K、MRR、答案、拒答和访问控制准确率阈值。 |
+| `batch_eval_runs` | `access_control_accuracy` | 所有用例引用均处于执行角色权限范围内的比例。 |
 | `batch_eval_runs` | `metric_deltas_json` | 当前指标相对历史基线的变化。 |
 | `batch_eval_runs` | `baseline_reference` | 历史运行编号或随代码提交的批准基线版本。 |
 | `agent_runs` | `status` | 任务状态，包括 queued、running、cancel_requested、cancelled、completed、blocked 和 failed。 |

@@ -108,6 +108,15 @@ def build_grounded_answer(question: str, hits: list[SearchHit]) -> tuple[str, fl
     return mask_sensitive(answer), confidence, citations, generation
 
 
+def build_restricted_access_refusal() -> tuple[str, float, list[dict], dict]:
+    return (
+        "当前权限范围内未找到明确依据，无法给出可靠答案。",
+        0.0,
+        [],
+        local_generation("restricted_access_scope"),
+    )
+
+
 def local_generation(
     reason: str | None = None,
     *,
@@ -172,6 +181,7 @@ def build_citations(hits: list[SearchHit]) -> list[dict]:
             "document_id": hit.document_id,
             "document_title": hit.document_title,
             "document_filename": hit.document_filename,
+            "document_access_level": hit.document_access_level,
             "chunk_id": hit.chunk_id,
             "chunk_index": hit.chunk_index,
             "score": round(hit.score, 4),

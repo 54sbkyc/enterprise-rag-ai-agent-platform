@@ -6,19 +6,22 @@ GATE_METRICS = (
     "mrr",
     "answer_accuracy",
     "abstention_accuracy",
+    "access_control_accuracy",
 )
 DEFAULT_THRESHOLDS = {
     "recall_at_k": 0.80,
     "mrr": 0.75,
     "answer_accuracy": 0.80,
     "abstention_accuracy": 0.80,
+    "access_control_accuracy": 1.0,
 }
+DEFAULT_MINIMUM_CASES = 10
 
 
 @dataclass(frozen=True)
 class QualityGatePolicy:
     thresholds: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_THRESHOLDS))
-    minimum_cases: int = 5
+    minimum_cases: int = DEFAULT_MINIMUM_CASES
     max_regression: float = 0.05
 
     def __post_init__(self) -> None:
@@ -48,6 +51,7 @@ def summarize_evaluation_results(results: list[dict]) -> dict:
         "mrr": _average(reciprocal_results, "reciprocal_rank"),
         "answer_accuracy": _average(results, "answer_correct"),
         "abstention_accuracy": _average(results, "abstention_correct"),
+        "access_control_accuracy": _average(results, "access_control_correct"),
     }
 
 
