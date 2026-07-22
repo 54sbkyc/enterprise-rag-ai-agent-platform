@@ -1,0 +1,114 @@
+{
+  "version": "enterprise-rag-golden-v2",
+  "description": "覆盖公开与内部制度问答、敏感资料访问、角色越权拒答和知识边界拒答的角色感知黄金数据集。",
+  "cases": [
+    {
+      "key": "product-scope-public",
+      "category": "public_qa",
+      "actor_role": "employee",
+      "question": "公司产品覆盖哪些范围？",
+      "expected_keywords": ["企业知识库", "智能问答", "数据看板", "流程自动化"],
+      "expected_documents": ["enterprise_suite_product_service_intro.md"],
+      "should_answer": true
+    },
+    {
+      "key": "visitor-office-registration",
+      "category": "public_qa",
+      "actor_role": "employee",
+      "question": "访客进入办公区有什么要求？",
+      "expected_keywords": ["前台登记", "内部员工", "全程陪同"],
+      "expected_documents": ["enterprise_suite_company_office_guide.md"],
+      "should_answer": true
+    },
+    {
+      "key": "leave-application-lead-time",
+      "category": "internal_qa",
+      "actor_role": "employee",
+      "question": "员工请假需要提前多久申请？",
+      "expected_keywords": ["事假", "提前 1 个工作日", "申请"],
+      "expected_documents": ["enterprise_suite_attendance_leave.md"],
+      "should_answer": true
+    },
+    {
+      "key": "expense-submission-deadline",
+      "category": "internal_qa",
+      "actor_role": "employee",
+      "question": "费用发生后多久提交报销？",
+      "expected_keywords": ["7 个工作日", "合法有效发票", "业务说明"],
+      "expected_documents": ["enterprise_suite_expense_travel.md"],
+      "should_answer": true
+    },
+    {
+      "key": "project-delivery-acceptance",
+      "category": "process_qa",
+      "actor_role": "tech",
+      "question": "项目交付前需要完成哪些验收？",
+      "expected_keywords": ["功能测试", "权限测试", "性能检查"],
+      "expected_documents": ["enterprise_suite_project_delivery.md"],
+      "should_answer": true
+    },
+    {
+      "key": "security-incident-reporting",
+      "category": "sensitive_qa",
+      "actor_role": "tech",
+      "question": "信息安全事件应如何上报？",
+      "expected_keywords": ["立即通知", "IT", "安全负责人", "直属主管"],
+      "expected_documents": ["enterprise_suite_security_incident_response.md"],
+      "should_answer": true
+    },
+    {
+      "key": "sensitive-data-personal-drive",
+      "category": "sensitive_qa",
+      "actor_role": "admin",
+      "question": "敏感资料可以通过个人网盘发送吗？",
+      "expected_keywords": ["不得", "个人网盘", "敏感资料"],
+      "expected_documents": ["enterprise_suite_data_classification.md"],
+      "should_answer": true
+    },
+    {
+      "key": "contract-approval-materials",
+      "category": "sensitive_qa",
+      "actor_role": "admin",
+      "question": "合同审批需要提交哪些材料？",
+      "expected_keywords": ["合同正文", "商务条款说明", "报价依据", "风险说明"],
+      "expected_documents": ["enterprise_suite_contract_risk.md"],
+      "should_answer": true
+    },
+    {
+      "key": "employee-contract-access-denied",
+      "category": "access_denied",
+      "actor_role": "employee",
+      "question": "合同审批需要提交哪些材料？",
+      "expected_keywords": [],
+      "expected_documents": [],
+      "should_answer": false
+    },
+    {
+      "key": "employee-security-communication-denied",
+      "category": "access_denied",
+      "actor_role": "employee",
+      "question": "信息安全事件如何对外沟通？",
+      "expected_keywords": [],
+      "expected_documents": [],
+      "should_answer": false
+    },
+    {
+      "key": "employee-sales-discount-denied",
+      "category": "access_denied",
+      "actor_role": "employee",
+      "question": "销售折扣审批需要哪些材料？",
+      "expected_keywords": [],
+      "expected_documents": [],
+      "should_answer": false
+    },
+    {
+      "key": "unsupported-mars-expense",
+      "category": "abstention",
+      "actor_role": "employee",
+      "question": "火星差旅费用如何报销？",
+      "expected_keywords": [],
+      "expected_documents": [],
+      "should_answer": false
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "version": "enterprise-rag-golden-v1",
+  "description": "覆盖企业制度问答、敏感数据治理、项目交付、合同审批和越界拒答的最小黄金数据集。",
+  "cases": [
+    {
+      "key": "leave-application-lead-time",
+      "category": "policy_qa",
+      "question": "员工请假需要提前多久申请？",
+      "expected_keywords": ["事假", "提前 1 个工作日", "申请"],
+      "expected_documents": ["enterprise_suite_attendance_leave.md"],
+      "should_answer": true
+    },
+    {
+      "key": "sensitive-data-personal-drive",
+      "category": "security_policy",
+      "question": "敏感资料可以通过个人网盘发送吗？",
+      "expected_keywords": ["不得", "个人网盘", "敏感资料"],
+      "expected_documents": ["enterprise_suite_data_classification.md"],
+      "should_answer": true
+    },
+    {
+      "key": "project-delivery-acceptance",
+      "category": "process_qa",
+      "question": "项目交付前需要完成哪些验收？",
+      "expected_keywords": ["功能测试", "权限测试", "性能检查"],
+      "expected_documents": ["enterprise_suite_project_delivery.md"],
+      "should_answer": true
+    },
+    {
+      "key": "contract-approval-materials",
+      "category": "sensitive_qa",
+      "question": "合同审批需要提交哪些材料？",
+      "expected_keywords": ["合同正文", "商务条款说明", "报价依据", "风险说明"],
+      "expected_documents": ["enterprise_suite_contract_risk.md"],
+      "should_answer": true
+    },
+    {
+      "key": "unsupported-mars-expense",
+      "category": "abstention",
+      "question": "火星差旅费用如何报销？",
+      "expected_keywords": [],
+      "expected_documents": [],
+      "should_answer": false
+    }
+  ]
+}

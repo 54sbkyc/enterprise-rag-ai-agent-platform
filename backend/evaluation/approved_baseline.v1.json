@@ -1,0 +1,12 @@
+{
+  "version": "enterprise-rag-approved-baseline-v1",
+  "dataset_version": "enterprise-rag-golden-v1",
+  "dataset_fingerprint": "fda4ff019a477614c3e0f9bdf1c708b2d6423a981c9dcdab937c561274ad2d7b",
+  "top_k": 5,
+  "metrics": {
+    "recall_at_k": 1.0,
+    "mrr": 1.0,
+    "answer_accuracy": 1.0,
+    "abstention_accuracy": 1.0
+  }
+}

@@ -2,6 +2,47 @@
 
 本文件记录公开作品集版本的重要变化。版本号遵循 Semantic Versioning。
 
+## [Unreleased]
+
+## [1.2.0] - 2026-07-22
+
+面向 AI 应用开发作品集的可靠性与安全增强版本。
+
+### Added
+
+- Agent 支持进程内异步任务、持久化状态、幂等提交、协作式取消和失败任务重试。
+- 新增任务详情、取消、重试 API，以及工作台轮询、取消和历史重试交互。
+- 新增版本化 RAG 黄金数据集、数据集指纹、绝对阈值和历史基线回归门禁。
+- 新增随代码评审的批准基线，CI 校验数据集版本、指纹和 Top K 后执行 5 个百分点回退门禁。
+- 新增 `python -m app.eval_gate_cli`，门禁失败返回非零退出码并在 GitHub Actions 上传 JSON 报告。
+- 将黄金集升级为 12 条角色化 v2 用例，覆盖管理员、技术员工、普通员工的可回答、越权拒答和无依据拒答场景。
+- 新增访问控制准确率：任何引用超出用例执行角色的文档密级都会使门禁失败。
+- 新增受限主题预检，低权限用户询问敏感主题时保守拒答，避免从普通资料拼接出看似合理的越权答案。
+
+### Changed
+
+- 将简历项目卡更新为带公开仓库、Release、CI 和量化工程指标的可投递版本。
+- 新增面试前检查、8 分钟演示主线、故障预案和避免过度宣传的检查清单。
+- 仓库、Release、CI 和许可证链接迁移到新账号 `54sbkyc`。
+- 评测中心展示门禁结论、失败指标和基线变化；黄金用例改为只读，自定义用例继续支持维护。
+- 评测中心支持为自定义用例选择执行角色，并在运行结果、历史记录和导出报告中展示访问控制指标。
+- 修复企业样例 Markdown 一级标题被写成问号占位符的问题。
+- 将关键词召回升级为正文 70%、标题 30% 的字段加权 BM25，修复通用流程词压过精确标题的问题。
+- 发布验收新增锁定依赖完整性检查，避免 `pip check` 无法发现声明依赖未安装的问题。
+
+### Validation
+
+- 129 项 pytest 自动化测试通过。
+- 12 条角色化黄金用例全部通过，Recall@K、MRR、答案、拒答与访问控制准确率均为 100%。
+- GitHub Actions 完成锁定依赖检查、全量测试、确定性 RAG 门禁和 JSON 报告上传。
+- Playwright 覆盖桌面与 390x844 手机视口，确认评测中心无横向溢出。
+
+### Known Boundaries
+
+- SQLite 与进程内 Agent 执行器适合单实例演示和小规模部署，不代表多实例生产架构。
+- 受限主题预检只读取不可访问文档标题元数据；生产环境仍应升级为文档级 ACL 与策略引擎。
+- 向量存储仍使用 SQLite JSON；大规模语料应迁移 PostgreSQL + pgvector 并接入独立 rerank。
+
 ## [1.1.0] - 2026-07-10
 
 首个公开的 AI 应用开发作品集版本。
@@ -34,4 +75,6 @@
 - Agent 当前同步执行；生产环境仍需异步队列、幂等、取消和人工审批。
 - 关键条件覆盖率是可配置启发式规则，需要用真实业务评测集持续校准。
 
-[1.1.0]: https://github.com/sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0
+[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0

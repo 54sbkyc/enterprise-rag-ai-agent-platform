@@ -5,11 +5,14 @@ from dataclasses import dataclass
 
 from .db import get_conn
 from .embeddings import embed_query
-from .text_processing import token_counts
+from .text_processing import token_counts, tokenize
 
 
 BM25_K1 = 1.5
 BM25_B = 0.75
+BM25_CONTENT_WEIGHT = 0.70
+BM25_TITLE_WEIGHT = 0.30
+RESTRICTED_TITLE_COVERAGE = 0.25
 
 
 @dataclass
@@ -52,8 +55,13 @@ def search_chunks(question: str, top_k: int, access_levels: list[str] | None = N
     chunk_counts = [_json_dict(row["token_json"]) for row in rows]
     query_counts = token_counts(question)
     query_terms = sorted(query_counts)
-    bm25_raw = _bm25_scores(query_counts, chunk_counts)
-    bm25_normalized = _normalize_positive(bm25_raw)
+    content_bm25 = _normalize_positive(_bm25_scores(query_counts, chunk_counts))
+    title_counts = [token_counts(row["title"]) for row in rows]
+    title_bm25 = _normalize_positive(_bm25_scores(query_counts, title_counts))
+    bm25_normalized = [
+        BM25_CONTENT_WEIGHT * content_score + BM25_TITLE_WEIGHT * title_score
+        for content_score, title_score in zip(content_bm25, title_bm25)
+    ]
 
     embeddings = [_json_vector(row["embedding_json"]) for row in rows]
     embedding_models = Counter(
@@ -96,7 +104,7 @@ def search_chunks(question: str, top_k: int, access_levels: list[str] | None = N
                 score=round(final_score, 6),
                 matched_terms=matched_terms[:10],
                 query_terms=query_terms[:20],
-                bm25_score=round(bm25_raw[index], 6),
+                bm25_score=round(bm25_normalized[index], 6),
                 vector_score=round(vector_raw[index], 6),
                 rerank_score=round(rerank_score, 6),
                 retrieval_mode=retrieval_mode,
@@ -104,6 +112,32 @@ def search_chunks(question: str, top_k: int, access_levels: list[str] | None = N
         )
 
     return sorted(ranked, key=lambda item: (item.score, item.bm25_score, item.vector_score), reverse=True)[:top_k]
+
+
+def has_restricted_topic_match(question: str, access_levels: list[str]) -> bool:
+    """Detect a strong inaccessible-title match without reading restricted content."""
+    placeholders = ",".join("?" for _ in access_levels)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT title
+            FROM documents
+            WHERE access_level NOT IN ({placeholders}) AND status = 'ready'
+            """,
+            access_levels,
+        ).fetchall()
+    query_terms = set(tokenize(question))
+    if not query_terms:
+        return False
+    for row in rows:
+        title_terms = set(tokenize(row["title"]))
+        if not title_terms:
+            continue
+        overlap = query_terms & title_terms
+        semantic_overlap = any(len(term) >= 2 for term in overlap)
+        if semantic_overlap and len(overlap) / len(title_terms) >= RESTRICTED_TITLE_COVERAGE:
+            return True
+    return False
 
 
 def _bm25_scores(query_counts: dict[str, int], documents: list[dict[str, int]]) -> list[float]:

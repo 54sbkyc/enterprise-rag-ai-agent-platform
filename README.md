@@ -1,10 +1,10 @@
 # 企业知识库 RAG + AI Agent 平台
 
-[![Tests](https://github.com/sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml/badge.svg)](https://github.com/sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml)
-[![Release](https://img.shields.io/github/v/release/sbkyc/enterprise-rag-ai-agent-platform)](https://github.com/sbkyc/enterprise-rag-ai-agent-platform/releases)
-[![License](https://img.shields.io/github/license/sbkyc/enterprise-rag-ai-agent-platform)](LICENSE)
+[![Tests](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml/badge.svg)](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/54sbkyc/enterprise-rag-ai-agent-platform)](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases)
+[![License](https://img.shields.io/github/license/54sbkyc/enterprise-rag-ai-agent-platform)](LICENSE)
 
-一个面向 AI 应用开发岗位的 Python 全栈项目。当前实用性增强版本为 `v1.1.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志和 AI 调用可观测。
+一个面向 AI 应用开发岗位的 Python 全栈项目。当前角色化安全增强版本为 `v1.2.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志和 AI 调用可观测。
 
 这个项目不是单纯的聊天页面，而是一个可以向面试官展示工程闭环的 AI 应用：能回答、能追溯、能评测、能治理、能看到成本和运行过程。
 
@@ -16,9 +16,10 @@
 | [面试官评分卡](docs/portfolio_review_scorecard.md) | 从 AI 应用、后端、全栈、安全、测试和生产化角度评估项目含金量。 |
 | [面试讲解要点](docs/interview_talking_points.md) | 准备常见追问和演示讲法。 |
 | [AI 应用演示脚本](docs/demo_runbook.md) | 按 8 分钟主线展示 RAG、Agent、安全、评测和工程交付。 |
+| [面试演示检查清单](docs/interview_demo_checklist.md) | 面试前一天和前五分钟的环境、主线与故障预案检查。 |
 | [生产化路线图](docs/production_roadmap.md) | 说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent 和 ACL 升级路径。 |
 | [最终验收报告](docs/final_acceptance_report.md) | 说明发布前验收、工程完整度和诚实边界。 |
-| [v1.1.0 版本说明](docs/releases/v1.1.0.md) | 查看首个公开版本的能力、验证结果和生产化边界。 |
+| [v1.2.0 版本说明](docs/releases/v1.2.0.md) | 查看角色化 RAG 安全、异步 Agent、质量门禁和验证结果。 |
 | [变更记录](CHANGELOG.md) | 按版本追踪公开仓库的重要变化。 |
 | [GitHub 发布清单](docs/github_release_checklist.md) | 确认哪些文件该提交、哪些本地资料不进入公开仓库。 |
 | [安全说明](SECURITY.md) | 说明密钥、本地数据、Prompt 注入、权限控制和 AI 安全边界。 |
@@ -34,30 +35,33 @@
 
 ![问答可观测轨迹](docs/screenshots/qa-observability.png)
 
+![版本化 RAG 质量门禁](docs/screenshots/rag-quality-gate.png)
+
 ## 面试官视角的亮点
 
 | 能力 | 项目体现 |
 | --- | --- |
-| RAG 应用落地 | 文档解析、切分、BM25、可选 Embedding、融合重排、Top-K 引用回答 |
-| AI Agent 工程 | 受控模型规划、工具白名单、权限检查、超时重试、运行状态和调用轨迹 |
+| RAG 应用落地 | 文档解析、切分、标题/正文字段加权 BM25、可选 Embedding、融合重排、Top-K 引用回答 |
+| AI Agent 工程 | 受控模型规划、工具白名单、进程内异步任务、幂等提交、取消重试和调用轨迹 |
 | 可观测性 | 每次问答返回决策轨迹、token 估算、成本估算；首页汇总 AI 运营指标 |
-| 质量评测 | 支持 Recall@K、MRR、答案正确率、拒答准确率和 Markdown/CSV 报告导出 |
-| 企业安全 | 角色权限、文档密级过滤、Prompt 注入拦截、敏感信息脱敏、审计日志 |
+| 质量评测 | 12 条角色化黄金用例，支持 Recall@K、MRR、答案正确率、拒答准确率、访问控制准确率和报告导出 |
+| 回归门禁 | 版本化黄金集、SHA-256 指纹、批准/历史基线、阈值判定和 CI 失败退出码 |
+| 企业安全 | 角色权限、文档密级过滤、受限主题保守拒答、Prompt 注入拦截、敏感信息脱敏、审计日志 |
 | 产品闭环 | 低置信度问题、员工反馈和 Agent 结果可沉淀为知识缺口，形成知识库治理流程 |
 | 全栈实现 | FastAPI + SQLite 后端，原生 HTML/CSS/JavaScript 前端，自动化测试覆盖核心流程 |
 
 ## 核心功能
 
 - 文档管理：支持 TXT、Markdown、PDF、DOCX 上传，自动解析、切分、索引和版本记录。
-- 混合检索：默认使用 BM25 + 本地重排；配置 Embedding 后自动融合语义向量召回，并可为历史文档批量补建向量。
+- 混合检索：默认使用正文 70%、标题 30% 的字段加权 BM25 + 本地重排；配置 Embedding 后自动融合语义向量召回，并可为历史文档批量补建向量。
 - 依据覆盖闸门：回答前检查问题关键条件是否出现在 Top-K 依据中，覆盖不足时保守拒答，并在决策轨迹中展示覆盖率和缺失词。
-- 权限控制：内置管理员与普通员工角色，后端接口和前端页面都按权限收敛。
+- 权限控制：内置管理员、技术员工与普通员工角色，后端接口、检索范围和前端页面都按权限收敛；低权限用户命中受限文档主题时只返回通用拒答，不暴露标题或正文。
 - RAG 问答：基于可访问文档检索片段，返回有依据的回答和引用来源。
-- Agent 工作台：支持确定性或模型规划，展示每一步工具输入、重试次数、耗时、状态、输出和最终结果。
+- Agent 工作台：异步提交任务并轮询持久化状态，支持幂等键、协作式取消、失败重试，同时展示每一步工具输入、耗时和输出。
 - AI 可观测：问答页展示安全检查、权限范围、检索、生成等轨迹，以及 token 和成本估算。
 - 运行降级透明：区分大模型生成、本地抽取和模型失败后的本地降级，优先使用供应商返回的 Token 用量。
 - 首页运营指标：汇总 token、成本、Agent 运行次数、工具调用次数和最近 Agent 运行。
-- 质量治理：支持问答反馈、知识缺口、知识库健康体检，以及可复现的召回、排序、答案和拒答评测。
+- 质量治理：使用只读角色化黄金数据集执行召回、排序、答案、拒答和访问控制评测，记录绝对阈值、批准/历史基线变化；问答反馈、知识缺口和健康体检形成后续治理闭环。
 - 安全审计：记录问答日志、拦截原因、管理操作、文档变更和评测结果。
 - 运行时加固：会话默认 12 小时过期，上传默认限制 10 MB，跨域默认关闭且拒绝通配来源。
 
@@ -67,7 +71,7 @@
 | --- | --- |
 | 后端 | Python, FastAPI, Pydantic, SQLite |
 | 文档解析 | PyMuPDF, python-docx |
-| 检索 | jieba 分词, BM25, OpenAI 兼容 Embedding, 融合重排 |
+| 检索 | jieba 分词, 字段加权 BM25, OpenAI 兼容 Embedding, 融合重排 |
 | AI 接入 | 本地抽取式回答，兼容 OpenAI Chat Completions 协议 |
 | 前端 | HTML, CSS, JavaScript |
 | 测试 | pytest, FastAPI TestClient, Playwright 浏览器验证 |
@@ -165,6 +169,15 @@ python -m pytest
 
 当前版本覆盖了 Agent 工具调用、AI 可观测、权限控制、分页、质量评测、安全拦截、前端契约和基础烟雾测试。
 
+单独运行可复现的 RAG 质量门禁：
+
+```powershell
+cd backend
+python -m app.eval_gate_cli --output ..\.runtime\evaluation-gate-report.json
+```
+
+内置 `enterprise-rag-golden-v2` 包含 12 条按管理员、技术员工和普通员工执行的用例；批准基线的 Recall@K、MRR、答案正确率、拒答准确率和访问控制准确率均为 `100%`。CI 会校验黄金集指纹并阻止单项回退超过 5 个百分点；门禁规则、基线更新和生产边界见 [docs/rag_quality_gate.md](docs/rag_quality_gate.md)。
+
 ## 发布前检查
 
 准备推到 GitHub 前，先阅读 [docs/github_release_checklist.md](docs/github_release_checklist.md) 和 [docs/final_acceptance_report.md](docs/final_acceptance_report.md)，再运行非破坏式检查脚本：
@@ -173,11 +186,11 @@ python -m pytest
 .\scripts\verify_project.ps1
 ```
 
-总验收脚本会运行 Python 编译检查、依赖一致性检查、全量测试和 GitHub 发布检查；不会删除、移动或打包任何文件。发布检查还会扫描公开源码和文档中的疑似密钥格式。
+总验收脚本会逐项核对锁定依赖是否已安装且版本一致，再运行 Python 编译、依赖冲突、全量测试、确定性 RAG 质量门禁和 GitHub 发布检查；不会删除、移动或打包任何文件。发布检查还会扫描公开源码和文档中的疑似密钥格式。
 
 ## CI 与生产化
 
-仓库提供 GitHub Actions 测试工作流 [.github/workflows/tests.yml](.github/workflows/tests.yml)，推送到 `main`/`master` 或提交 Pull Request 时会安装后端依赖并运行 `python -m pytest`。
+仓库提供 GitHub Actions 工作流 [.github/workflows/tests.yml](.github/workflows/tests.yml)，推送到 `main`/`master` 或提交 Pull Request 时会运行 pytest 和确定性 RAG 质量门禁，并上传 JSON 评测报告。代码测试通过但 AI 指标低于阈值时，CI 仍会失败。
 
 生产化演进路径见 [docs/production_roadmap.md](docs/production_roadmap.md)，重点覆盖 embedding + pgvector + rerank、PostgreSQL、异步 Agent、部门级 ACL、观测与成本治理等升级方向。
 
@@ -190,7 +203,7 @@ python -m pytest
 3. 进入智能体工作台，运行同类任务，展示 Agent 的工具调用时间线。
 4. 切换普通员工账号，说明员工只能使用问答工作台，不能访问后台治理页面。
 5. 输入 Prompt 注入类问题，展示安全拦截和审计记录。
-6. 进入评测中心运行批量评测，展示 Recall@K、MRR、答案正确率、拒答准确率和报告导出。
+6. 进入评测中心运行质量门禁，展示黄金集版本、数据集指纹、阈值结论、历史基线差异和报告导出。
 7. 展示知识缺口与健康体检，说明项目不仅能问答，还能持续治理知识库。
 
 ## 项目结构
@@ -202,14 +215,19 @@ enterprise-rag-qa
 │  │  ├─ main.py              # FastAPI 路由与业务接口
 │  │  ├─ agent.py             # Agent 工具编排
 │  │  ├─ observability.py     # 轨迹、token、成本估算
-│  │  ├─ search.py            # BM25、向量融合与本地重排
+│  │  ├─ search.py            # 字段加权 BM25、向量融合与本地重排
 │  │  ├─ embeddings.py        # Embedding 批量调用与索引数据
 │  │  ├─ agent_planner.py     # 受控模型规划与计划校验
-│  │  ├─ evaluation_metrics.py # Recall、MRR、答案与拒答指标
+│  │  ├─ evaluation_dataset.py # 黄金数据集加载、校验和指纹
+│  │  ├─ evaluation_gate.py   # 阈值与批准/历史基线门禁
+│  │  ├─ evaluation_metrics.py # Recall、MRR、答案、拒答与访问控制指标
+│  │  ├─ eval_gate_cli.py     # 隔离运行的 CI 质量门禁
 │  │  ├─ qa.py                # 回答生成
 │  │  ├─ security.py          # 安全拦截与脱敏
 │  │  └─ schema.sql           # SQLite 表结构
-│  ├─ tests                   # pytest 测试
+│  ├─ evaluation             # 版本化 RAG 黄金数据集
+│  ├─ tests                  # pytest 测试
+│  ├─ check_requirements.py  # 锁定依赖完整性检查
 │  └─ requirements.txt
 ├─ frontend
 │  ├─ index.html
@@ -217,6 +235,7 @@ enterprise-rag-qa
 │  └─ styles.css
 ├─ docs
 │  ├─ screenshots
+│  ├─ rag_quality_gate.md
 │  └─ interview_talking_points.md
 ├─ samples
 └─ start.ps1
@@ -228,4 +247,4 @@ enterprise-rag-qa
 - 将本地融合重排升级为独立 rerank 模型，并建立线上难例集。
 - 将 SQLite 替换为 PostgreSQL，并加入迁移工具。
 - 接入真实 SSO、部门 ACL 和更细粒度的文档权限。
-- 将当前同步 Agent 运行迁移到异步任务队列，并增加取消、幂等和人工审批节点。
+- 将当前进程内异步 Agent 执行器迁移到 Redis/Celery 等外部任务队列，并增加租约、跨实例恢复和人工审批节点。

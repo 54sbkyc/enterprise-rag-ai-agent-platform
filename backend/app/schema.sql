@@ -84,16 +84,24 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS evaluation_cases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_key TEXT,
+    dataset_version TEXT NOT NULL DEFAULT 'custom',
+    category TEXT NOT NULL DEFAULT 'general',
+    actor_role TEXT NOT NULL DEFAULT 'admin',
     question TEXT NOT NULL,
     expected_keywords TEXT NOT NULL,
     expected_documents TEXT NOT NULL,
     should_answer INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    updated_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS batch_eval_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
+    dataset_version TEXT NOT NULL DEFAULT 'custom',
+    dataset_hash TEXT NOT NULL DEFAULT '',
+    top_k INTEGER NOT NULL DEFAULT 5,
     total INTEGER NOT NULL,
     avg_score REAL NOT NULL,
     avg_confidence REAL NOT NULL,
@@ -102,14 +110,25 @@ CREATE TABLE IF NOT EXISTS batch_eval_runs (
     mrr REAL NOT NULL DEFAULT 0,
     answer_accuracy REAL NOT NULL DEFAULT 0,
     abstention_accuracy REAL NOT NULL DEFAULT 0,
+    access_control_accuracy REAL NOT NULL DEFAULT 0,
+    gate_status TEXT NOT NULL DEFAULT 'not_evaluated',
+    thresholds_json TEXT NOT NULL DEFAULT '{}',
+    minimum_cases INTEGER NOT NULL DEFAULT 10,
+    max_regression REAL NOT NULL DEFAULT 0.05,
+    failed_metrics_json TEXT NOT NULL DEFAULT '[]',
+    metric_deltas_json TEXT NOT NULL DEFAULT '{}',
+    baseline_run_id INTEGER,
+    baseline_reference TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY(baseline_run_id) REFERENCES batch_eval_runs(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS batch_eval_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id INTEGER NOT NULL,
     case_id INTEGER,
+    actor_role TEXT NOT NULL DEFAULT 'admin',
     question TEXT NOT NULL,
     expected_keywords TEXT NOT NULL,
     expected_documents TEXT NOT NULL,
@@ -122,6 +141,7 @@ CREATE TABLE IF NOT EXISTS batch_eval_results (
     reciprocal_rank REAL,
     answer_correct INTEGER NOT NULL DEFAULT 0,
     abstention_correct INTEGER NOT NULL DEFAULT 0,
+    access_control_correct INTEGER NOT NULL DEFAULT 0,
     citations_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY(run_id) REFERENCES batch_eval_runs(id) ON DELETE CASCADE,
@@ -202,8 +222,15 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     error_message TEXT,
     started_at TEXT,
     completed_at TEXT,
+    execution_mode TEXT NOT NULL DEFAULT 'sync',
+    top_k INTEGER NOT NULL DEFAULT 5,
+    idempotency_key TEXT,
+    parent_run_id INTEGER,
+    cancel_requested_at TEXT,
+    updated_at TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY(parent_run_id) REFERENCES agent_runs(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS document_versions (

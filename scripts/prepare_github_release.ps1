@@ -23,9 +23,15 @@ $RequiredPaths = @(
     "backend/app/agent.py",
     "backend/app/agent_planner.py",
     "backend/app/embeddings.py",
+    "backend/app/evaluation_dataset.py",
+    "backend/app/evaluation_gate.py",
     "backend/app/evaluation_metrics.py",
+    "backend/app/eval_gate_cli.py",
     "backend/app/observability.py",
+    "backend/evaluation/golden_cases.v2.json",
+    "backend/evaluation/approved_baseline.v2.json",
     "backend/requirements.txt",
+    "backend/check_requirements.py",
     "backend/seed_enterprise_documents.py",
     "frontend/index.html",
     "frontend/app.js",
@@ -34,17 +40,21 @@ $RequiredPaths = @(
     "docs/portfolio_review_scorecard.md",
     "docs/architecture_decisions.md",
     "docs/interview_talking_points.md",
+    "docs/interview_demo_checklist.md",
     "docs/demo_runbook.md",
     "docs/production_roadmap.md",
+    "docs/rag_quality_gate.md",
     "docs/final_acceptance_report.md",
     "docs/github_release_checklist.md",
     "docs/screenshots/dashboard-ai-ops.png",
     "docs/screenshots/agent-workbench.png",
     "docs/screenshots/qa-observability.png",
+    "docs/screenshots/rag-quality-gate.png",
     "docs/diagrams/README.md",
     "docs/diagrams/system-components.puml",
     "docs/diagrams/system-components.svg",
-    "docs/releases/v1.1.0.md"
+    "docs/releases/v1.1.0.md",
+    "docs/releases/v1.2.0.md"
 )
 
 $BlockedPaths = @(
@@ -122,11 +132,14 @@ $MarkdownFilesToValidate = @(
     "docs/portfolio_review_scorecard.md",
     "docs/architecture_decisions.md",
     "docs/production_roadmap.md",
+    "docs/rag_quality_gate.md",
     "docs/interview_talking_points.md",
+    "docs/interview_demo_checklist.md",
     "docs/demo_runbook.md",
     "docs/final_acceptance_report.md",
     "docs/diagrams/README.md",
-    "docs/releases/v1.1.0.md"
+    "docs/releases/v1.1.0.md",
+    "docs/releases/v1.2.0.md"
 )
 
 $PublicPatternsToScanForSecrets = @(

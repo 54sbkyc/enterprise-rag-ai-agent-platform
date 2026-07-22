@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+from app.config import APP_VERSION
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -47,6 +49,7 @@ def test_contributing_guide_documents_repeatable_workflow():
         "文档同步",
         "不要提交",
         "python -m pytest",
+        "python -m app.eval_gate_cli",
     ]:
         assert phrase in text
 
@@ -65,6 +68,7 @@ def test_architecture_decisions_explain_key_tradeoffs():
         "本地抽取式回答",
         "OpenAI Chat Completions",
         "发布治理",
+        "RAG 回归门禁",
     ]:
         assert phrase in text
 
@@ -107,18 +111,19 @@ def test_repository_has_mit_license_linked_from_public_materials():
     checklist = (ROOT / "docs" / "github_release_checklist.md").read_text(encoding="utf-8")
 
     assert license_text.startswith("MIT License")
-    assert "Copyright (c) 2026 sbkyc" in license_text
+    assert "Copyright (c) 2026 54sbkyc" in license_text
     assert "LICENSE" in readme
     assert "LICENSE" in checklist
 
 
 def test_public_release_notes_match_application_version():
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    release_notes = (ROOT / "docs" / "releases" / "v1.1.0.md").read_text(encoding="utf-8")
+    release_path = ROOT / "docs" / "releases" / f"v{APP_VERSION}.md"
+    release_notes = release_path.read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "## [1.1.0] - 2026-07-10" in changelog
-    assert "113 项 pytest" in changelog
-    assert "v1.1.0 - Practical AI Application Release" in release_notes
-    assert "docs/releases/v1.1.0.md" in readme
+    assert f"## [{APP_VERSION}] - 2026-07-22" in changelog
+    assert "129 项 pytest" in changelog
+    assert f"# v{APP_VERSION} - Role-Aware RAG Security Release" in release_notes
+    assert f"docs/releases/v{APP_VERSION}.md" in readme
     assert "CHANGELOG.md" in readme

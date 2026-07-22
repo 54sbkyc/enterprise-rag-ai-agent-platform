@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -5,6 +6,7 @@ from pathlib import Path
 from typing import Iterator
 
 from .config import DB_PATH
+from .evaluation_dataset import load_evaluation_dataset
 
 
 def utc_now() -> str:
@@ -41,16 +43,35 @@ def init_db() -> None:
         _ensure_column(conn, "evaluations", "user_id", "INTEGER")
         _ensure_column(conn, "evaluations", "expected_documents", "TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "evaluations", "citation_hit", "REAL NOT NULL DEFAULT 0")
+        _ensure_column(conn, "evaluation_cases", "case_key", "TEXT")
+        _ensure_column(conn, "evaluation_cases", "dataset_version", "TEXT NOT NULL DEFAULT 'custom'")
+        _ensure_column(conn, "evaluation_cases", "category", "TEXT NOT NULL DEFAULT 'general'")
+        _ensure_column(conn, "evaluation_cases", "actor_role", "TEXT NOT NULL DEFAULT 'admin'")
         _ensure_column(conn, "evaluation_cases", "should_answer", "INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "evaluation_cases", "updated_at", "TEXT")
+        _ensure_column(conn, "batch_eval_runs", "dataset_version", "TEXT NOT NULL DEFAULT 'custom'")
+        _ensure_column(conn, "batch_eval_runs", "dataset_hash", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "batch_eval_runs", "top_k", "INTEGER NOT NULL DEFAULT 5")
         _ensure_column(conn, "batch_eval_runs", "recall_at_k", "REAL NOT NULL DEFAULT 0")
         _ensure_column(conn, "batch_eval_runs", "mrr", "REAL NOT NULL DEFAULT 0")
         _ensure_column(conn, "batch_eval_runs", "answer_accuracy", "REAL NOT NULL DEFAULT 0")
         _ensure_column(conn, "batch_eval_runs", "abstention_accuracy", "REAL NOT NULL DEFAULT 0")
+        _ensure_column(conn, "batch_eval_runs", "access_control_accuracy", "REAL NOT NULL DEFAULT 0")
+        _ensure_column(conn, "batch_eval_runs", "gate_status", "TEXT NOT NULL DEFAULT 'not_evaluated'")
+        _ensure_column(conn, "batch_eval_runs", "thresholds_json", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "batch_eval_runs", "minimum_cases", "INTEGER NOT NULL DEFAULT 10")
+        _ensure_column(conn, "batch_eval_runs", "max_regression", "REAL NOT NULL DEFAULT 0.05")
+        _ensure_column(conn, "batch_eval_runs", "failed_metrics_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "batch_eval_runs", "metric_deltas_json", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "batch_eval_runs", "baseline_run_id", "INTEGER")
+        _ensure_column(conn, "batch_eval_runs", "baseline_reference", "TEXT")
         _ensure_column(conn, "batch_eval_results", "should_answer", "INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "batch_eval_results", "actor_role", "TEXT NOT NULL DEFAULT 'admin'")
         _ensure_column(conn, "batch_eval_results", "retrieval_recall", "REAL")
         _ensure_column(conn, "batch_eval_results", "reciprocal_rank", "REAL")
         _ensure_column(conn, "batch_eval_results", "answer_correct", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "batch_eval_results", "abstention_correct", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "batch_eval_results", "access_control_correct", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "is_active", "INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "knowledge_gaps", "assigned_to", "INTEGER")
         _ensure_column(conn, "knowledge_gaps", "resolution_action", "TEXT NOT NULL DEFAULT ''")
@@ -65,6 +86,26 @@ def init_db() -> None:
         _ensure_column(conn, "agent_runs", "error_message", "TEXT")
         _ensure_column(conn, "agent_runs", "started_at", "TEXT")
         _ensure_column(conn, "agent_runs", "completed_at", "TEXT")
+        _ensure_column(conn, "agent_runs", "execution_mode", "TEXT NOT NULL DEFAULT 'sync'")
+        _ensure_column(conn, "agent_runs", "top_k", "INTEGER NOT NULL DEFAULT 5")
+        _ensure_column(conn, "agent_runs", "idempotency_key", "TEXT")
+        _ensure_column(conn, "agent_runs", "parent_run_id", "INTEGER")
+        _ensure_column(conn, "agent_runs", "cancel_requested_at", "TEXT")
+        _ensure_column(conn, "agent_runs", "updated_at", "TEXT")
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_runs_user_idempotency
+            ON agent_runs(user_id, idempotency_key)
+            WHERE idempotency_key IS NOT NULL
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_cases_case_key
+            ON evaluation_cases(case_key)
+            WHERE case_key IS NOT NULL
+            """
+        )
         from .permissions import seed_default_permissions
 
         seed_default_permissions(conn)
@@ -111,86 +152,68 @@ def _seed_document_versions(conn: sqlite3.Connection) -> None:
 
 
 def _seed_evaluation_cases(conn: sqlite3.Connection) -> None:
-    cases = [
-        (
-            "员工请假需要提前多久申请？",
-            ["事假", "提前 1 个工作日", "申请"],
-            ["enterprise_suite_attendance_leave.md"],
-            True,
-            [],
-        ),
-        (
-            "敏感资料可以通过个人网盘发送吗？",
-            ["不得", "个人网盘", "敏感资料"],
-            ["enterprise_suite_data_classification.md"],
-            True,
-            [],
-        ),
-        (
-            "项目交付前需要完成哪些验收？",
-            ["功能测试", "权限测试", "性能检查"],
-            ["enterprise_suite_project_delivery.md"],
-            True,
-            [],
-        ),
-        (
-            "核心合作合同审批需要提交哪些材料？",
-            ["合同背景", "预算来源", "风险说明", "交付清单"],
-            ["核心客户合同.docx"],
-            True,
-            ["合同总价是多少？"],
-        ),
-        (
-            "火星差旅费用如何报销？",
-            [],
-            [],
-            False,
-            [],
-        ),
-    ]
-    legacy_sources = {"ordinary_enterprise_handbook", "sensitive_contract_note"}
-    for question, keywords, documents, should_answer, legacy_questions in cases:
-        candidates = [question, *legacy_questions]
-        placeholders = ",".join("?" for _ in candidates)
+    dataset = load_evaluation_dataset()
+    legacy_questions = {
+        "contract-approval-materials": ["核心合作合同审批需要提交哪些材料？", "合同总价是多少？"],
+    }
+    for case in dataset["cases"]:
+        candidates = [case["question"], *legacy_questions.get(case["key"], [])]
         existing = conn.execute(
-            f"""
-            SELECT id, question, expected_documents
-            FROM evaluation_cases
-            WHERE question IN ({placeholders})
-            ORDER BY CASE WHEN question = ? THEN 0 ELSE 1 END, id
-            LIMIT 1
-            """,
-            (*candidates, question),
+            "SELECT id FROM evaluation_cases WHERE case_key = ? LIMIT 1",
+            (case["key"],),
         ).fetchone()
+        if not existing:
+            placeholders = ",".join("?" for _ in candidates)
+            existing = conn.execute(
+                f"""
+                SELECT id
+                FROM evaluation_cases
+                WHERE case_key IS NULL AND question IN ({placeholders})
+                ORDER BY CASE WHEN question = ? THEN 0 ELSE 1 END, id
+                LIMIT 1
+                """,
+                (*candidates, case["question"]),
+            ).fetchone()
         if existing:
-            current_sources = set(__import__("json").loads(existing["expected_documents"] or "[]"))
-            is_legacy = existing["question"] in legacy_questions or bool(current_sources & legacy_sources)
-            if is_legacy:
-                conn.execute(
-                    """
-                    UPDATE evaluation_cases
-                    SET question = ?, expected_keywords = ?, expected_documents = ?, should_answer = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        question,
-                        __import__("json").dumps(keywords, ensure_ascii=False),
-                        __import__("json").dumps(documents, ensure_ascii=False),
-                        1 if should_answer else 0,
-                        existing["id"],
-                    ),
-                )
+            conn.execute(
+                """
+                UPDATE evaluation_cases
+                SET case_key = ?, dataset_version = ?, category = ?, actor_role = ?, question = ?,
+                    expected_keywords = ?, expected_documents = ?, should_answer = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    case["key"],
+                    dataset["version"],
+                    case["category"],
+                    case["actor_role"],
+                    case["question"],
+                    json.dumps(case["expected_keywords"], ensure_ascii=False),
+                    json.dumps(case["expected_documents"], ensure_ascii=False),
+                    1 if case["should_answer"] else 0,
+                    utc_now(),
+                    existing["id"],
+                ),
+            )
             continue
         conn.execute(
             """
-            INSERT INTO evaluation_cases(question, expected_keywords, expected_documents, should_answer, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO evaluation_cases(
+                case_key, dataset_version, category, actor_role, question,
+                expected_keywords, expected_documents, should_answer, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                question,
-                __import__("json").dumps(keywords, ensure_ascii=False),
-                __import__("json").dumps(documents, ensure_ascii=False),
-                1 if should_answer else 0,
+                case["key"],
+                dataset["version"],
+                case["category"],
+                case["actor_role"],
+                case["question"],
+                json.dumps(case["expected_keywords"], ensure_ascii=False),
+                json.dumps(case["expected_documents"], ensure_ascii=False),
+                1 if case["should_answer"] else 0,
+                utc_now(),
                 utc_now(),
             ),
         )

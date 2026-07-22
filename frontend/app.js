@@ -9,6 +9,7 @@ const state = {
   logs: [],
   evaluations: [],
   evaluationCases: [],
+  evaluationDataset: null,
   users: [],
   auditLogs: [],
   agentRuns: [],
@@ -24,6 +25,8 @@ const state = {
   sessionHistory: [],
   currentLogId: null,
   selectedDocumentId: null,
+  activeAgentRunId: null,
+  agentPollGeneration: 0,
   route: "dashboard",
   pages: {
     documents: { page: 1, pageSize: 5, total: 0 },
@@ -96,6 +99,15 @@ const gapStatusLabels = {
   processing: "处理中",
   resolved: "已解决",
   closed: "无需处理",
+};
+
+const evaluationMetricLabels = {
+  total: "用例覆盖",
+  recall_at_k: "Recall@K",
+  mrr: "MRR",
+  answer_accuracy: "答案正确率",
+  abstention_accuracy: "拒答准确率",
+  access_control_accuracy: "访问控制准确率",
 };
 
 const REMEMBER_LOGIN_KEY = "enterprise_kb_remember_login";
@@ -310,7 +322,16 @@ async function refreshEvaluationPage() {
     loadEvaluations(),
     loadBatchRuns(),
     loadEvaluationCases(),
+    loadEvaluationDataset(),
   ]);
+}
+
+async function loadEvaluationDataset() {
+  state.evaluationDataset = await api("/api/evaluation/dataset");
+  const badge = $("#evaluationDatasetBadge");
+  if (!badge) return;
+  badge.textContent = `${state.evaluationDataset.version} · ${state.evaluationDataset.case_count} 条`;
+  badge.title = `数据集指纹 ${state.evaluationDataset.fingerprint} · 角色 ${state.evaluationDataset.roles.map((role) => roleLabels[role] || role).join("/")} · 批准基线 ${state.evaluationDataset.approved_baseline?.version || "未配置"}`;
 }
 
 async function loadDashboard() {
@@ -789,21 +810,30 @@ function renderEvaluationCases() {
   }
   list.innerHTML = state.evaluationCases
     .map(
-      (item) => `
+      (item) => {
+        const readonly = item.is_golden;
+        const sourceLabel = readonly ? `${item.dataset_version} · ${item.category}` : `自定义 · ${item.category}`;
+        const actorRole = item.actor_role || "admin";
+        return `
         <div class="compact-item">
-          <strong>用例 #${item.id}</strong>
+          <div class="panel-title case-title">
+            <strong>用例 #${item.id}</strong>
+            <span class="badge ${readonly ? "" : "muted"}">${readonly ? "黄金用例" : "自定义"}</span>
+          </div>
+          <span class="case-source">${escapeHtml(sourceLabel)} · ${escapeHtml(roleLabels[actorRole] || actorRole)}${item.case_key ? ` · ${escapeHtml(item.case_key)}` : ""}</span>
           <div class="case-form">
-            <input class="input" data-case-question="${item.id}" value="${escapeHtml(item.question)}" />
-            <input class="input" data-case-keywords="${item.id}" value="${escapeHtml(item.expected_keywords.join(", "))}" />
-            <input class="input" data-case-documents="${item.id}" value="${escapeHtml(item.expected_documents.join(", "))}" />
-            <label class="inline-check"><input type="checkbox" data-case-should-answer="${item.id}" ${item.should_answer ? "checked" : ""} /> 应有答案</label>
-            <div class="compact-actions">
-              <button class="ghost-btn small-btn" data-case-save="${item.id}">保存</button>
-              <button class="delete-btn" data-case-delete="${item.id}">×</button>
-            </div>
+            <input class="input" data-case-question="${item.id}" value="${escapeHtml(item.question)}" ${readonly ? "disabled" : ""} />
+            <input class="input" data-case-keywords="${item.id}" value="${escapeHtml(item.expected_keywords.join(", "))}" ${readonly ? "disabled" : ""} />
+            <input class="input" data-case-documents="${item.id}" value="${escapeHtml(item.expected_documents.join(", "))}" ${readonly ? "disabled" : ""} />
+            <select class="input" aria-label="执行角色" data-case-role="${item.id}" ${readonly ? "disabled" : ""}>
+              ${["employee", "tech", "admin"].map((role) => `<option value="${role}" ${actorRole === role ? "selected" : ""}>${roleLabels[role]}</option>`).join("")}
+            </select>
+            <label class="inline-check"><input type="checkbox" data-case-should-answer="${item.id}" ${item.should_answer ? "checked" : ""} ${readonly ? "disabled" : ""} /> 应有答案</label>
+            ${readonly ? "" : `<div class="compact-actions"><button class="ghost-btn small-btn" data-case-save="${item.id}">保存</button><button class="delete-btn" title="删除用例" data-case-delete="${item.id}">×</button></div>`}
           </div>
         </div>
-      `,
+      `;
+      },
     )
     .join("");
 }
@@ -818,12 +848,14 @@ async function createEvaluationCase() {
         question: $("#caseQuestion").value.trim(),
         expected_keywords: splitValue($("#caseKeywords").value),
         expected_documents: splitValue($("#caseDocuments").value),
+        actor_role: $("#caseActorRole").value,
         should_answer: $("#caseShouldAnswer").checked,
       }),
     });
     $("#caseQuestion").value = "";
     $("#caseKeywords").value = "";
     $("#caseDocuments").value = "";
+    $("#caseActorRole").value = "employee";
     $("#caseShouldAnswer").checked = true;
     setText("#caseStatus", "新增成功。");
     await loadEvaluationCases();
@@ -840,6 +872,7 @@ async function saveEvaluationCase(id) {
       question: document.querySelector(`[data-case-question="${id}"]`)?.value.trim(),
       expected_keywords: splitValue(document.querySelector(`[data-case-keywords="${id}"]`)?.value || ""),
       expected_documents: splitValue(document.querySelector(`[data-case-documents="${id}"]`)?.value || ""),
+      actor_role: document.querySelector(`[data-case-role="${id}"]`)?.value || "admin",
       should_answer: document.querySelector(`[data-case-should-answer="${id}"]`)?.checked ?? true,
     }),
   });
@@ -1118,15 +1151,6 @@ function renderAnalytics() {
     { label: "中等", value: state.analytics.evaluation_buckets.medium },
     { label: "高分", value: state.analytics.evaluation_buckets.high },
   ]);
-  const batch = state.analytics.latest_batch;
-  $("#batchSummary").innerHTML = batch
-    ? `
-      <span>平均得分</span><strong>${percentText(batch.avg_score)}</strong>
-      <span>平均置信度：${percentText(batch.avg_confidence)}</span>
-      <span>引用命中率：${percentText(batch.citation_hit_rate)}</span>
-      <span>安全拦截占比：${percentText(state.analytics.blocked_ratio)}</span>
-    `
-    : `<span>暂无批量评测结果。</span><span>安全拦截占比：${percentText(state.analytics.blocked_ratio)}</span>`;
 }
 
 function renderBarChart(selector, rows) {
@@ -1302,16 +1326,28 @@ async function loadBatchRuns() {
   Object.assign(paging, { page: result.page, pageSize: result.page_size, total: result.total });
   renderPagination("#batchPagination", "batches", result);
   renderBatchRuns();
-  if (!state.batchRuns.length) return;
-  const latest = state.batchRuns[0];
+  renderLatestQualityGate(state.batchRuns[0]);
+}
+
+function renderLatestQualityGate(latest) {
+  if (!latest) {
+    $("#batchSummary").innerHTML = `<span>暂无质量门禁结果。</span>`;
+    return;
+  }
+  const gatePassed = latest.gate_status === "passed";
+  const failed = (latest.failed_metrics || []).map((metric) => evaluationMetricLabels[metric] || metric);
+  const baseline = latest.baseline_reference || (latest.baseline_run_id ? `历史运行 #${latest.baseline_run_id}` : "无兼容基线");
   $("#batchSummary").innerHTML = `
-    <span>最近运行：${formatDate(latest.created_at)}</span>
-    <strong>${percentText(latest.avg_score)}</strong>
+    <span class="badge ${gatePassed ? "" : "danger"}">${gatePassed ? "门禁通过" : "门禁失败"}</span>
+    <strong>${percentText(latest.answer_accuracy)}</strong>
+    <span>${escapeHtml(latest.dataset_version)} · ${escapeHtml(latest.dataset_hash.slice(0, 12))} · Top ${latest.top_k} · ${baseline}</span>
     <span>平均置信度：${percentText(latest.avg_confidence)}</span>
     <span>Recall@K：${percentText(latest.recall_at_k)}</span>
     <span>MRR：${Number(latest.mrr || 0).toFixed(3)}</span>
     <span>答案正确率：${percentText(latest.answer_accuracy)}</span>
     <span>拒答准确率：${percentText(latest.abstention_accuracy)}</span>
+    <span>访问控制准确率：${percentText(latest.access_control_accuracy)}</span>
+    ${failed.length ? `<span class="gate-failure">未通过：${escapeHtml(failed.join("、"))}</span>` : ""}
   `;
 }
 
@@ -1324,16 +1360,27 @@ function renderBatchRuns() {
   list.innerHTML = state.batchRuns
     .slice(0, 5)
     .map(
-      (run) => `
+      (run) => {
+        const gatePassed = run.gate_status === "passed";
+        const deltas = Object.entries(run.metric_deltas || {})
+          .map(([metric, value]) => `${evaluationMetricLabels[metric] || metric} ${Number(value) >= 0 ? "+" : ""}${percentText(value)}`)
+          .join(" · ");
+        return `
         <div class="compact-item">
-          <strong>批量评测 #${run.id}</strong>
-          <span>${run.total} 条 · Recall@K ${percentText(run.recall_at_k)} · MRR ${Number(run.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(run.answer_accuracy)} · 拒答准确率 ${percentText(run.abstention_accuracy)} · ${formatDate(run.created_at)}</span>
+          <div class="panel-title case-title">
+            <strong>质量门禁 #${run.id}</strong>
+            <span class="badge ${gatePassed ? "" : "danger"}">${gatePassed ? "通过" : "失败"}</span>
+          </div>
+          <span>${escapeHtml(run.dataset_version)} · ${escapeHtml(run.dataset_hash.slice(0, 12))} · Top ${run.top_k} · ${escapeHtml(run.baseline_reference || (run.baseline_run_id ? `历史运行 #${run.baseline_run_id}` : "无兼容基线"))}</span>
+          <span>${run.total} 条 · Recall@K ${percentText(run.recall_at_k)} · MRR ${Number(run.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(run.answer_accuracy)} · 拒答准确率 ${percentText(run.abstention_accuracy)} · 访问控制 ${percentText(run.access_control_accuracy)} · ${formatDate(run.created_at)}</span>
+          ${deltas ? `<span>相对基线：${escapeHtml(deltas)}</span>` : ""}
           <div class="compact-actions">
             <button class="ghost-btn small-btn" data-export-md="${run.id}">导出 Markdown</button>
             <button class="ghost-btn small-btn" data-export-csv="${run.id}">导出 CSV</button>
           </div>
         </div>
-      `,
+      `;
+      },
     )
     .join("");
 }
@@ -1535,30 +1582,111 @@ async function runAgentFromWorkspace() {
     setText("#agentRunStatus", "请输入任务目标。");
     return;
   }
+  await submitAgentTask(goal);
+}
+
+async function submitAgentTask(goal) {
   $("#runAgentBtn").disabled = true;
+  $("#cancelAgentBtn").disabled = true;
   $("#agentStatusBadge").className = "badge muted";
-  $("#agentStatusBadge").textContent = "运行中";
-  setText("#agentRunStatus", "正在执行工具调用...");
+  $("#agentStatusBadge").textContent = "提交中";
+  setText("#agentRunStatus", "正在创建持久化任务...");
   setText("#agentRunIdBadge", "未生成");
-  $("#agentFinalAnswer").textContent = "Agent 正在规划并调用工具...";
+  $("#agentFinalAnswer").textContent = "Agent 任务正在进入执行队列...";
   renderAgentToolTimeline([]);
   try {
-    const result = await api("/api/agent/run", {
+    const result = await api("/api/agent/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ goal, top_k: 5 }),
+      body: JSON.stringify({ goal, top_k: 5, idempotency_key: makeAgentIdempotencyKey("run") }),
     });
+    state.activeAgentRunId = result.run_id;
     renderAgentResult(result);
-    setText("#agentRunStatus", `运行完成：#${result.run_id}`);
-    await loadAgentRuns();
+    setText("#agentRunStatus", `任务已提交：#${result.run_id}`);
+    await monitorAgentRun(result.run_id);
   } catch (error) {
     $("#agentStatusBadge").className = "badge danger";
     $("#agentStatusBadge").textContent = "失败";
     $("#agentFinalAnswer").textContent = error.message;
     setText("#agentRunStatus", error.message);
+    state.activeAgentRunId = null;
   } finally {
-    $("#runAgentBtn").disabled = false;
+    updateAgentTaskControls();
   }
+}
+
+async function monitorAgentRun(runId) {
+  const generation = ++state.agentPollGeneration;
+  while (generation === state.agentPollGeneration) {
+    const result = await api(`/api/agent/runs/${runId}`);
+    renderAgentResult(result);
+    if (isAgentTerminal(result.status)) {
+      state.activeAgentRunId = null;
+      setText("#agentRunStatus", `任务${toolStatusLabel(result.status)}：#${runId}`);
+      updateAgentTaskControls();
+      await loadAgentRuns();
+      return result;
+    }
+    setText("#agentRunStatus", `任务${toolStatusLabel(result.status)}：#${runId}`);
+    updateAgentTaskControls();
+    await wait(800);
+  }
+  return null;
+}
+
+async function cancelActiveAgentRun() {
+  const runId = state.activeAgentRunId;
+  if (!runId) return;
+  $("#cancelAgentBtn").disabled = true;
+  try {
+    const result = await api(`/api/agent/runs/${runId}/cancel`, { method: "POST" });
+    renderAgentResult(result);
+    setText("#agentRunStatus", `已请求取消：#${runId}`);
+  } catch (error) {
+    setText("#agentRunStatus", error.message);
+  } finally {
+    updateAgentTaskControls();
+  }
+}
+
+async function retryAgentRun(runId) {
+  if (state.activeAgentRunId) return;
+  $("#runAgentBtn").disabled = true;
+  try {
+    const result = await api(`/api/agent/runs/${runId}/retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ idempotency_key: makeAgentIdempotencyKey(`retry-${runId}`) }),
+    });
+    state.activeAgentRunId = result.run_id;
+    renderAgentResult(result);
+    setText("#agentRunStatus", `已重试为新任务：#${result.run_id}`);
+    await monitorAgentRun(result.run_id);
+  } catch (error) {
+    setText("#agentRunStatus", error.message);
+    state.activeAgentRunId = null;
+  } finally {
+    updateAgentTaskControls();
+  }
+}
+
+function updateAgentTaskControls() {
+  const active = Boolean(state.activeAgentRunId);
+  $("#runAgentBtn").disabled = active;
+  $("#cancelAgentBtn").disabled = !active;
+}
+
+function isAgentTerminal(status) {
+  return ["completed", "blocked", "failed", "cancelled"].includes(status);
+}
+
+function makeAgentIdempotencyKey(prefix) {
+  const suffix = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${suffix}`;
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function loadAgentRuns() {
@@ -1574,12 +1702,15 @@ async function loadAgentRuns() {
 }
 
 function renderAgentResult(result) {
-  $("#agentStatusBadge").className = ["blocked", "failed"].includes(result.status) ? "badge danger" : "badge";
+  const danger = ["blocked", "failed", "cancelled"].includes(result.status);
+  const muted = ["queued", "cancel_requested"].includes(result.status);
+  $("#agentStatusBadge").className = danger ? "badge danger" : muted ? "badge muted" : "badge";
   $("#agentStatusBadge").textContent = toolStatusLabel(result.status);
   setText("#agentRunIdBadge", result.run_id ? `#${result.run_id}` : "历史记录");
-  $("#agentFinalAnswer").textContent = result.final_answer || "Agent 未返回最终回答。";
+  const pendingText = result.status === "queued" ? "任务正在等待可用执行槽位。" : "Agent 正在规划并调用工具...";
+  $("#agentFinalAnswer").textContent = result.final_answer || pendingText;
   const plan = result.plan || {};
-  const plannerLabel = plan.mode === "llm" ? "模型规划" : "确定性规划";
+  const plannerLabel = plan.mode === "llm" ? "模型规划" : plan.mode === "pending" || !plan.mode ? "等待规划" : "确定性规划";
   const fallback = plan.fallback_reason ? ` · 降级原因 ${plan.fallback_reason}` : "";
   setText("#agentPlanSummary", `计划：${plannerLabel} · ${(plan.steps || []).join(" → ") || "未记录"}${fallback}`);
   renderAgentToolTimeline(result.tool_calls || []);
@@ -1622,21 +1753,30 @@ function renderAgentRuns() {
     return;
   }
   list.innerHTML = state.agentRuns
-    .map(
-      (run) => `
+    .map((run) => {
+      const canCancel = ["queued", "running", "cancel_requested"].includes(run.status);
+      const canRetry = ["failed", "cancelled"].includes(run.status);
+      const statusClass = ["blocked", "failed", "cancelled"].includes(run.status)
+        ? "danger"
+        : ["queued", "cancel_requested"].includes(run.status)
+          ? "muted"
+          : "";
+      return `
         <div class="compact-item">
           <div class="panel-title">
             <strong>#${run.id} ${escapeHtml(run.goal)}</strong>
-            <span class="badge ${run.status === "blocked" ? "danger" : ""}">${escapeHtml(toolStatusLabel(run.status))}</span>
+            <span class="badge ${statusClass}">${escapeHtml(toolStatusLabel(run.status))}</span>
           </div>
-          <span>${escapeHtml(run.display_name || run.username || "当前用户")} · ${run.planner_mode === "llm" ? "模型规划" : "确定性规划"} · ${formatDate(run.created_at)} · ${(run.tool_calls || []).length} 步</span>
+          <span>${escapeHtml(run.display_name || run.username || "当前用户")} · ${run.execution_mode === "async" ? "异步任务" : "同步运行"} · ${formatDate(run.created_at)} · ${(run.tool_calls || []).length} 步</span>
           <p class="log-answer-preview">${escapeHtml(run.final_answer || "")}</p>
           <div class="document-actions">
             <button class="ghost-btn small-btn" data-agent-run="${run.id}">查看轨迹</button>
+            ${canCancel ? `<button class="ghost-btn small-btn" data-agent-cancel="${run.id}">取消</button>` : ""}
+            ${canRetry ? `<button class="ghost-btn small-btn" data-agent-retry="${run.id}">重试</button>` : ""}
           </div>
         </div>
-      `,
-    )
+      `;
+    })
     .join("");
 }
 
@@ -1721,6 +1861,10 @@ function formatToolPayload(value) {
 
 function toolStatusLabel(status) {
   return {
+    queued: "排队中",
+    running: "运行中",
+    cancel_requested: "取消中",
+    cancelled: "已取消",
     completed: "完成",
     passed: "通过",
     skipped: "跳过",
@@ -2108,7 +2252,7 @@ async function evaluateQuestion() {
 
 async function runBatchEvaluation() {
   $("#batchEvaluateBtn").disabled = true;
-  setText("#evalResult", "正在运行批量评测...");
+  setText("#evalResult", "正在运行版本化 RAG 质量门禁...");
   try {
     const result = await api("/api/evaluation/batch/run", {
       method: "POST",
@@ -2117,7 +2261,7 @@ async function runBatchEvaluation() {
     });
     setText(
       "#evalResult",
-      `批量完成：${result.summary.total} 条 · Recall@K ${percentText(result.summary.recall_at_k)} · MRR ${Number(result.summary.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(result.summary.answer_accuracy)} · 拒答准确率 ${percentText(result.summary.abstention_accuracy)}`,
+      `${result.gate.status === "passed" ? "门禁通过" : `门禁失败：${result.gate.failed_metrics.map((metric) => evaluationMetricLabels[metric] || metric).join("、")}`} · ${result.summary.total} 条 · Recall@K ${percentText(result.summary.recall_at_k)} · MRR ${Number(result.summary.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(result.summary.answer_accuracy)} · 拒答准确率 ${percentText(result.summary.abstention_accuracy)} · 访问控制 ${percentText(result.summary.access_control_accuracy)}`,
     );
     await refreshEvaluationPage();
     await loadLogs();
@@ -2230,6 +2374,7 @@ function bindEvents() {
   $("#rebuildEmbeddingsBtn").addEventListener("click", rebuildEmbeddings);
   $("#askBtn").addEventListener("click", askQuestion);
   $("#runAgentBtn").addEventListener("click", runAgentFromWorkspace);
+  $("#cancelAgentBtn").addEventListener("click", cancelActiveAgentRun);
   $("#refreshAgentRunsBtn").addEventListener("click", loadAgentRuns);
   $("#copyAnswerBtn").addEventListener("click", copyAnswer);
   $("#clearSessionHistoryBtn").addEventListener("click", clearSessionHistory);
@@ -2357,10 +2502,23 @@ function bindEvents() {
     await createKnowledgeGap(button.dataset.feedbackQuestion, button.dataset.feedbackLog || null);
     await loadQaFeedbacks();
   });
-  $("#agentRunHistory").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-agent-run]");
-    if (!button) return;
-    const run = state.agentRuns.find((item) => String(item.id) === String(button.dataset.agentRun));
+  $("#agentRunHistory").addEventListener("click", async (event) => {
+    const cancelButton = event.target.closest("[data-agent-cancel]");
+    if (cancelButton) {
+      const runId = Number(cancelButton.dataset.agentCancel);
+      state.activeAgentRunId = runId;
+      await cancelActiveAgentRun();
+      await monitorAgentRun(runId);
+      return;
+    }
+    const retryButton = event.target.closest("[data-agent-retry]");
+    if (retryButton) {
+      await retryAgentRun(Number(retryButton.dataset.agentRetry));
+      return;
+    }
+    const viewButton = event.target.closest("[data-agent-run]");
+    if (!viewButton) return;
+    const run = state.agentRuns.find((item) => String(item.id) === String(viewButton.dataset.agentRun));
     if (run) renderAgentResult({ run_id: run.id, ...run });
   });
   $("#healthLowConfidence").addEventListener("click", async (event) => {

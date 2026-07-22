@@ -1,5 +1,12 @@
 name: Tests
 
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
@@ -34,5 +41,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Verify locked dependencies
+        run: python check_requirements.py
+
       - name: Run tests
         run: python -m pytest
+
+      - name: Run deterministic RAG quality gate
+        run: python -m app.eval_gate_cli --output ../.runtime/evaluation-gate-report.json
+
+      - name: Upload RAG quality report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rag-quality-gate-report
+          path: .runtime/evaluation-gate-report.json
+          if-no-files-found: error

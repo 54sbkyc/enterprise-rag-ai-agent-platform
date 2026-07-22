@@ -17,6 +17,7 @@ class CaseSignals:
     reciprocal_rank: float | None
     answer_correct: int
     abstention_correct: int
+    access_control_correct: int
     refused: bool
 
 
@@ -48,6 +49,7 @@ def evaluate_case_signals(
     expected_keywords: list[str],
     expected_documents: list[str],
     should_answer: bool,
+    allowed_access_levels: list[str],
 ) -> CaseSignals:
     refused = is_refusal(answer, confidence, citations)
     if should_answer:
@@ -66,6 +68,9 @@ def evaluate_case_signals(
         reciprocal_rank=reciprocal_rank(citations, expected_documents),
         answer_correct=answer_correct,
         abstention_correct=int(refused == (not should_answer)),
+        access_control_correct=int(
+            all(item.get("document_access_level") in allowed_access_levels for item in citations)
+        ),
         refused=refused,
     )
 

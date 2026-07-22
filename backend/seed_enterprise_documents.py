@@ -187,7 +187,7 @@ DOCS = [
 
 
 def render_content(title, sections):
-    lines = [f"?????{title}", ""]
+    lines = [f"# {title}", ""]
     for index, (heading, body) in enumerate(sections, start=1):
         lines.extend([f"{index}. {heading}", body, ""])
     return "\n".join(lines).strip() + "\n"

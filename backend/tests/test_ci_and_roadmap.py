@@ -14,7 +14,10 @@ def test_github_actions_pytest_workflow_exists():
         "actions/setup-python@v6",
         'python-version: "3.12"',
         "python -m pip install -r requirements.txt",
+        "python check_requirements.py",
         "python -m pytest",
+        "python -m app.eval_gate_cli",
+        "actions/upload-artifact@v7",
         "working-directory: backend",
     ]:
         assert phrase.lower() in text.lower()
@@ -42,11 +45,14 @@ def test_readme_and_release_checklist_link_ci_and_roadmap():
     checklist = (ROOT / "docs" / "github_release_checklist.md").read_text(encoding="utf-8")
     assert ".github/workflows/tests.yml" in readme
     assert "docs/production_roadmap.md" in readme
+    assert "docs/rag_quality_gate.md" in readme
     assert ".github/workflows/tests.yml" in checklist
     assert "docs/production_roadmap.md" in checklist
+    assert "docs/rag_quality_gate.md" in checklist
 
 
 def test_release_audit_requires_ci_and_roadmap():
     script = (ROOT / "scripts" / "prepare_github_release.ps1").read_text(encoding="utf-8")
     assert ".github/workflows/tests.yml" in script
     assert "docs/production_roadmap.md" in script
+    assert "docs/rag_quality_gate.md" in script

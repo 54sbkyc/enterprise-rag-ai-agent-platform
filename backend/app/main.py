@@ -1,16 +1,29 @@
 import json
 import os
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .agent import create_agent_run, finish_agent_run, run_agent
+from .agent import (
+    AgentTaskConflictError,
+    AgentTaskLimitError,
+    create_agent_run,
+    create_or_get_agent_task,
+    execute_agent_task,
+    finish_agent_run,
+    recover_interrupted_agent_runs,
+    request_agent_run_cancel,
+    run_agent,
+    runtime_error_result,
+)
 from .auth import (
     MANAGER_ROLES,
     allowed_access_levels,
@@ -21,10 +34,27 @@ from .auth import (
     require_admin,
     require_manager,
 )
-from .config import APP_NAME, APP_VERSION, CORS_ORIGINS, DEFAULT_TOP_K, MAX_UPLOAD_BYTES, UPLOAD_DIR
+from .config import (
+    AGENT_TASK_WORKERS,
+    APP_NAME,
+    APP_VERSION,
+    CORS_ORIGINS,
+    DEFAULT_TOP_K,
+    MAX_UPLOAD_BYTES,
+    UPLOAD_DIR,
+)
 from .db import get_conn, init_db, utc_now
 from .document_parser import SUPPORTED_EXTENSIONS, extract_text
 from .embeddings import build_chunk_index
+from .evaluation_dataset import cases_fingerprint, load_evaluation_baseline, load_evaluation_dataset
+from .evaluation_gate import (
+    DEFAULT_MINIMUM_CASES,
+    DEFAULT_THRESHOLDS,
+    QualityGatePolicy,
+    evaluate_quality_gate,
+    rounded_summary,
+    summarize_evaluation_results,
+)
 from .evaluation_metrics import evaluate_case_signals
 from .observability import build_agent_trace, build_usage_summary
 from .pagination import normalize_pagination, paginated
@@ -38,8 +68,8 @@ from .permissions import (
     update_role_permissions,
 )
 from .quality import calculate_quality
-from .qa import build_grounded_answer
-from .search import search_chunks
+from .qa import build_grounded_answer, build_restricted_access_refusal
+from .search import has_restricted_topic_match, search_chunks
 from .security import inspect_question
 from .text_processing import chunk_text, token_counts
 
@@ -51,7 +81,13 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    yield
+    recover_interrupted_agent_runs()
+    executor = ThreadPoolExecutor(max_workers=AGENT_TASK_WORKERS, thread_name_prefix="agent-task")
+    _app.state.agent_executor = executor
+    try:
+        yield
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
 
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
@@ -84,14 +120,37 @@ class AgentRunRequest(BaseModel):
     top_k: int = Field(default=DEFAULT_TOP_K, ge=1, le=10)
 
 
+class AgentTaskRequest(AgentRunRequest):
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
+
+
+class AgentRetryRequest(BaseModel):
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
+
+
 class EvaluateRequest(BaseModel):
     question: str = Field(..., min_length=1)
     expected_keywords: list[str] = Field(default_factory=list)
     expected_documents: list[str] = Field(default_factory=list)
 
 
+class EvaluationThresholds(BaseModel):
+    recall_at_k: float = Field(default=DEFAULT_THRESHOLDS["recall_at_k"], ge=0, le=1)
+    mrr: float = Field(default=DEFAULT_THRESHOLDS["mrr"], ge=0, le=1)
+    answer_accuracy: float = Field(default=DEFAULT_THRESHOLDS["answer_accuracy"], ge=0, le=1)
+    abstention_accuracy: float = Field(default=DEFAULT_THRESHOLDS["abstention_accuracy"], ge=0, le=1)
+    access_control_accuracy: float = Field(default=DEFAULT_THRESHOLDS["access_control_accuracy"], ge=0, le=1)
+
+
 class BatchEvaluateRequest(BaseModel):
     case_ids: list[int] | None = None
+    include_custom: bool = False
+    use_baseline: bool = True
+    top_k: int = Field(default=DEFAULT_TOP_K, ge=1, le=10)
+    baseline_run_id: int | None = Field(default=None, ge=1)
+    thresholds: EvaluationThresholds = Field(default_factory=EvaluationThresholds)
+    minimum_cases: int = Field(default=DEFAULT_MINIMUM_CASES, ge=1, le=1000)
+    max_regression: float = Field(default=0.05, ge=0, le=1)
 
 
 class EvaluationCaseRequest(BaseModel):
@@ -99,6 +158,8 @@ class EvaluationCaseRequest(BaseModel):
     expected_keywords: list[str] = Field(default_factory=list)
     expected_documents: list[str] = Field(default_factory=list)
     should_answer: bool = True
+    category: str = Field(default="custom", min_length=1, max_length=40)
+    actor_role: Literal["admin", "tech", "employee"] = "employee"
 
 
 class DocumentUpdateRequest(BaseModel):
@@ -884,11 +945,11 @@ def search_preview(q: str, top_k: int = DEFAULT_TOP_K, user: dict = Depends(curr
     return {
         "query": q.strip(),
         "explanation": {
-            "algorithm": "BM25 + 向量召回 + 本地重排" if retrieval_mode == "hybrid" else "BM25 + 本地重排",
+            "algorithm": "字段加权 BM25 + 向量召回 + 本地重排" if retrieval_mode == "hybrid" else "字段加权 BM25 + 本地重排",
             "retrieval_mode": retrieval_mode,
             "permission_scope": levels,
             "query_terms": hits[0].query_terms if hits else sorted(token_counts(q.strip()).keys())[:20],
-            "ranking_rule": "先按权限过滤，再融合 BM25、可用的向量相似度和标题/词项覆盖重排分数。",
+            "ranking_rule": "先按权限过滤，以正文 70%、标题 30% 计算字段加权 BM25，再融合可用的向量相似度和本地重排分数。",
         },
         "hits": [
             {
@@ -933,26 +994,58 @@ def ask(
 @app.post("/api/agent/run")
 def agent_run(payload: AgentRunRequest, user: dict = Depends(current_user)) -> dict:
     require_permission(user, "qa.use")
-    run_id = create_agent_run(payload.goal, user)
+    run_id = create_agent_run(payload.goal, user, top_k=payload.top_k)
     try:
         result = run_agent(payload.goal, payload.top_k, user)
     except Exception as exc:
-        result = {
-            "status": "failed",
-            "final_answer": "Agent 运行异常，已记录失败状态。",
-            "tool_calls": [],
-            "plan": {
-                "mode": "runtime_error",
-                "steps": [],
-                "fallback_reason": "unexpected_runtime_error",
-                "requested_model": None,
-            },
-            "error_message": type(exc).__name__,
-        }
+        result = runtime_error_result(exc)
         finish_agent_run(run_id, result)
         raise HTTPException(status_code=500, detail="Agent 运行失败，请查看运行记录") from exc
     finish_agent_run(run_id, result)
     return {"run_id": run_id, **result}
+
+
+@app.post("/api/agent/tasks", status_code=202)
+def create_agent_task(
+    payload: AgentTaskRequest,
+    request: Request,
+    user: dict = Depends(current_user),
+) -> dict:
+    require_permission(user, "qa.use")
+    try:
+        run_id, reused = create_or_get_agent_task(
+            payload.goal,
+            payload.top_k,
+            user,
+            idempotency_key=payload.idempotency_key,
+        )
+    except AgentTaskConflictError as exc:
+        raise HTTPException(status_code=409, detail="幂等键已用于其他任务参数") from exc
+    except AgentTaskLimitError as exc:
+        raise HTTPException(status_code=429, detail="当前运行中的 Agent 任务过多，请稍后再试") from exc
+    if not reused:
+        try:
+            request.app.state.agent_executor.submit(
+                execute_agent_task,
+                run_id,
+                payload.goal,
+                payload.top_k,
+                dict(user),
+            )
+        except RuntimeError as exc:
+            finish_agent_run(run_id, runtime_error_result(exc))
+            raise HTTPException(status_code=503, detail="Agent 任务执行器暂不可用") from exc
+        write_audit(
+            user,
+            "agent_task_queued",
+            "agent_run",
+            run_id,
+            {"top_k": payload.top_k, "idempotent": bool(payload.idempotency_key)},
+        )
+    result = get_agent_run_for_user(run_id, user)
+    result["run_id"] = run_id
+    result["reused"] = reused
+    return result
 
 
 @app.get("/api/agent/runs")
@@ -982,6 +1075,8 @@ def list_agent_runs(
             f"""
             SELECT a.id, a.goal, a.status, a.final_answer, a.tool_calls_json,
                    a.plan_json, a.planner_mode, a.error_message, a.started_at, a.completed_at, a.created_at,
+                   a.execution_mode, a.top_k, a.idempotency_key, a.parent_run_id,
+                   a.cancel_requested_at, a.updated_at,
                    u.username, u.display_name
             FROM agent_runs a
             LEFT JOIN users u ON u.id = a.user_id
@@ -993,11 +1088,68 @@ def list_agent_runs(
         ).fetchall()
     items = []
     for row in rows:
-        item = dict(row)
-        item["tool_calls"] = json.loads(item.pop("tool_calls_json") or "[]")
-        item["plan"] = json.loads(item.pop("plan_json") or "{}")
-        items.append(item)
+        items.append(serialize_agent_run(row))
     return paginated(items, total, page, page_size)
+
+
+@app.get("/api/agent/runs/{run_id}")
+def get_agent_run(run_id: int, user: dict = Depends(current_user)) -> dict:
+    require_permission(user, "qa.use")
+    return get_agent_run_for_user(run_id, user)
+
+
+@app.post("/api/agent/runs/{run_id}/cancel")
+def cancel_agent_run(run_id: int, user: dict = Depends(current_user)) -> dict:
+    require_permission(user, "qa.use")
+    current = get_agent_run_for_user(run_id, user)
+    if current["execution_mode"] != "async":
+        raise HTTPException(status_code=409, detail="同步 Agent 运行不支持取消")
+    status = request_agent_run_cancel(run_id)
+    if status == "cancel_requested" and current["status"] != "cancel_requested":
+        write_audit(user, "agent_task_cancel_requested", "agent_run", run_id, {"previous_status": current["status"]})
+    return get_agent_run_for_user(run_id, user)
+
+
+@app.post("/api/agent/runs/{run_id}/retry", status_code=202)
+def retry_agent_run(
+    run_id: int,
+    payload: AgentRetryRequest,
+    request: Request,
+    user: dict = Depends(current_user),
+) -> dict:
+    require_permission(user, "qa.use")
+    current = get_agent_run_for_user(run_id, user)
+    if current["status"] not in {"failed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="仅失败或已取消的任务可以重试")
+    try:
+        retry_run_id, reused = create_or_get_agent_task(
+            current["goal"],
+            current["top_k"],
+            user,
+            idempotency_key=payload.idempotency_key,
+            parent_run_id=run_id,
+        )
+    except AgentTaskConflictError as exc:
+        raise HTTPException(status_code=409, detail="幂等键已用于其他任务参数") from exc
+    except AgentTaskLimitError as exc:
+        raise HTTPException(status_code=429, detail="当前运行中的 Agent 任务过多，请稍后再试") from exc
+    if not reused:
+        try:
+            request.app.state.agent_executor.submit(
+                execute_agent_task,
+                retry_run_id,
+                current["goal"],
+                current["top_k"],
+                dict(user),
+            )
+        except RuntimeError as exc:
+            finish_agent_run(retry_run_id, runtime_error_result(exc))
+            raise HTTPException(status_code=503, detail="Agent 任务执行器暂不可用") from exc
+        write_audit(user, "agent_task_retried", "agent_run", retry_run_id, {"parent_run_id": run_id})
+    result = get_agent_run_for_user(retry_run_id, user)
+    result["run_id"] = retry_run_id
+    result["reused"] = reused
+    return result
 
 
 def compute_answer(payload: AskRequest, user: dict) -> dict:
@@ -1012,8 +1164,12 @@ def compute_answer(payload: AskRequest, user: dict) -> dict:
             "citations": [],
         }
 
-    hits = search_chunks(question, payload.top_k, allowed_access_levels(user))
-    answer, confidence, citations, generation = build_grounded_answer(question, hits)
+    access_levels = allowed_access_levels(user)
+    if has_restricted_topic_match(question, access_levels):
+        answer, confidence, citations, generation = build_restricted_access_refusal()
+    else:
+        hits = search_chunks(question, payload.top_k, access_levels)
+        answer, confidence, citations, generation = build_grounded_answer(question, hits)
     return {
         "answer": answer,
         "confidence": round(confidence, 4),
@@ -1186,8 +1342,12 @@ def run_ask(payload: AskRequest, user: dict) -> dict:
         }
 
     access_levels = allowed_access_levels(user)
-    hits = search_chunks(question, payload.top_k, access_levels)
-    answer, confidence, citations, generation = build_grounded_answer(question, hits)
+    if has_restricted_topic_match(question, access_levels):
+        hits = []
+        answer, confidence, citations, generation = build_restricted_access_refusal()
+    else:
+        hits = search_chunks(question, payload.top_k, access_levels)
+        answer, confidence, citations, generation = build_grounded_answer(question, hits)
     usage = build_usage_summary(question, citations, answer, generation)
     agent_trace = build_agent_trace(
         security_allowed=True,
@@ -1479,20 +1639,36 @@ def list_evaluation_cases(
         total = conn.execute("SELECT COUNT(*) AS count FROM evaluation_cases").fetchone()["count"]
         rows = conn.execute(
             """
-            SELECT id, question, expected_keywords, expected_documents, should_answer, created_at
+            SELECT id, case_key, dataset_version, category, actor_role, question,
+                   expected_keywords, expected_documents, should_answer, created_at, updated_at
             FROM evaluation_cases ORDER BY id
             LIMIT ? OFFSET ?
             """,
             (page_size, offset),
         ).fetchall()
-    result = []
-    for row in rows:
-        item = dict(row)
-        item["expected_keywords"] = json.loads(item["expected_keywords"])
-        item["expected_documents"] = json.loads(item["expected_documents"])
-        item["should_answer"] = bool(item["should_answer"])
-        result.append(item)
+    result = [serialize_evaluation_case(row) for row in rows]
     return paginated(result, total, page, page_size)
+
+
+@app.get("/api/evaluation/dataset")
+def get_evaluation_dataset(user: dict = Depends(current_user)) -> dict:
+    require_permission(user, "evaluation.manage")
+    dataset = load_evaluation_dataset()
+    baseline = load_evaluation_baseline()
+    return {
+        "version": dataset["version"],
+        "description": dataset["description"],
+        "case_count": len(dataset["cases"]),
+        "roles": sorted({case["actor_role"] for case in dataset["cases"]}),
+        "fingerprint": dataset["fingerprint"],
+        "default_thresholds": DEFAULT_THRESHOLDS,
+        "approved_baseline": {
+            "version": baseline["version"],
+            "dataset_fingerprint": baseline["dataset_fingerprint"],
+            "top_k": baseline["top_k"],
+            "metrics": baseline["metrics"],
+        },
+    }
 
 
 @app.post("/api/evaluation/cases")
@@ -1500,33 +1676,37 @@ def create_evaluation_case(payload: EvaluationCaseRequest, user: dict = Depends(
     require_permission(user, "evaluation.manage")
     keywords = normalize_list(payload.expected_keywords)
     documents = normalize_list(payload.expected_documents)
+    created = utc_now()
     with get_conn() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO evaluation_cases(question, expected_keywords, expected_documents, should_answer, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO evaluation_cases(
+                case_key, dataset_version, category, actor_role, question,
+                expected_keywords, expected_documents, should_answer, created_at, updated_at
+            )
+            VALUES (NULL, 'custom', ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                payload.category.strip().lower(),
+                payload.actor_role,
                 payload.question.strip(),
                 json.dumps(keywords, ensure_ascii=False),
                 json.dumps(documents, ensure_ascii=False),
                 1 if payload.should_answer else 0,
-                utc_now(),
+                created,
+                created,
             ),
         )
         row = conn.execute(
             """
-            SELECT id, question, expected_keywords, expected_documents, should_answer, created_at
+            SELECT id, case_key, dataset_version, category, actor_role, question,
+                   expected_keywords, expected_documents, should_answer, created_at, updated_at
             FROM evaluation_cases WHERE id = ?
             """,
             (cursor.lastrowid,),
         ).fetchone()
     write_audit(user, "create_evaluation_case", "evaluation_case", row["id"], {"question": payload.question})
-    item = dict(row)
-    item["expected_keywords"] = json.loads(item["expected_keywords"])
-    item["expected_documents"] = json.loads(item["expected_documents"])
-    item["should_answer"] = bool(item["should_answer"])
-    return item
+    return serialize_evaluation_case(row)
 
 
 @app.patch("/api/evaluation/cases/{case_id}")
@@ -1535,45 +1715,53 @@ def update_evaluation_case(case_id: int, payload: EvaluationCaseRequest, user: d
     keywords = normalize_list(payload.expected_keywords)
     documents = normalize_list(payload.expected_documents)
     with get_conn() as conn:
-        exists = conn.execute("SELECT id FROM evaluation_cases WHERE id = ?", (case_id,)).fetchone()
+        exists = conn.execute(
+            "SELECT id, case_key, actor_role FROM evaluation_cases WHERE id = ?",
+            (case_id,),
+        ).fetchone()
         if not exists:
             raise HTTPException(status_code=404, detail="评测用例不存在")
+        if exists["case_key"]:
+            raise HTTPException(status_code=409, detail="版本化黄金用例只读，请在数据集文件中修改并升级版本")
         conn.execute(
             """
             UPDATE evaluation_cases
-            SET question = ?, expected_keywords = ?, expected_documents = ?, should_answer = ?
+            SET category = ?, actor_role = ?, question = ?, expected_keywords = ?, expected_documents = ?,
+                should_answer = ?, updated_at = ?
             WHERE id = ?
             """,
             (
+                payload.category.strip().lower(),
+                payload.actor_role if "actor_role" in payload.model_fields_set else exists["actor_role"],
                 payload.question.strip(),
                 json.dumps(keywords, ensure_ascii=False),
                 json.dumps(documents, ensure_ascii=False),
                 1 if payload.should_answer else 0,
+                utc_now(),
                 case_id,
             ),
         )
         row = conn.execute(
             """
-            SELECT id, question, expected_keywords, expected_documents, should_answer, created_at
+            SELECT id, case_key, dataset_version, category, actor_role, question,
+                   expected_keywords, expected_documents, should_answer, created_at, updated_at
             FROM evaluation_cases WHERE id = ?
             """,
             (case_id,),
         ).fetchone()
     write_audit(user, "update_evaluation_case", "evaluation_case", case_id, {"question": payload.question})
-    item = dict(row)
-    item["expected_keywords"] = json.loads(item["expected_keywords"])
-    item["expected_documents"] = json.loads(item["expected_documents"])
-    item["should_answer"] = bool(item["should_answer"])
-    return item
+    return serialize_evaluation_case(row)
 
 
 @app.delete("/api/evaluation/cases/{case_id}")
 def delete_evaluation_case(case_id: int, user: dict = Depends(current_user)) -> dict:
     require_permission(user, "evaluation.manage")
     with get_conn() as conn:
-        row = conn.execute("SELECT question FROM evaluation_cases WHERE id = ?", (case_id,)).fetchone()
+        row = conn.execute("SELECT question, case_key FROM evaluation_cases WHERE id = ?", (case_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="评测用例不存在")
+        if row["case_key"]:
+            raise HTTPException(status_code=409, detail="版本化黄金用例不能删除")
         conn.execute("DELETE FROM evaluation_cases WHERE id = ?", (case_id,))
     write_audit(user, "delete_evaluation_case", "evaluation_case", case_id, {"question": row["question"]})
     return {"deleted": True}
@@ -1582,35 +1770,50 @@ def delete_evaluation_case(case_id: int, user: dict = Depends(current_user)) -> 
 @app.post("/api/evaluation/batch/run")
 def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(current_user)) -> dict:
     require_permission(user, "evaluation.manage")
+    if payload.baseline_run_id and not payload.use_baseline:
+        raise HTTPException(status_code=400, detail="禁用基线时不能指定 baseline_run_id")
     with get_conn() as conn:
         if payload.case_ids:
             placeholders = ",".join("?" for _ in payload.case_ids)
             rows = conn.execute(
                 f"""
-                SELECT id, question, expected_keywords, expected_documents, should_answer
+                SELECT id, case_key, dataset_version, category, actor_role, question,
+                       expected_keywords, expected_documents, should_answer
                 FROM evaluation_cases WHERE id IN ({placeholders}) ORDER BY id
                 """,
                 payload.case_ids,
             ).fetchall()
         else:
+            scope_clause = "" if payload.include_custom else "WHERE case_key IS NOT NULL"
             rows = conn.execute(
-                """
-                SELECT id, question, expected_keywords, expected_documents, should_answer
-                FROM evaluation_cases ORDER BY id
+                f"""
+                SELECT id, case_key, dataset_version, category, actor_role, question,
+                       expected_keywords, expected_documents, should_answer
+                FROM evaluation_cases {scope_clause} ORDER BY id
                 """
             ).fetchall()
 
     if not rows:
         raise HTTPException(status_code=400, detail="没有可运行的评测用例")
 
+    cases = []
+    for raw_row in rows:
+        row = dict(raw_row)
+        row["expected_keywords"] = json.loads(row["expected_keywords"])
+        row["expected_documents"] = json.loads(row["expected_documents"])
+        row["should_answer"] = bool(row["should_answer"])
+        cases.append(row)
+
     results = []
-    for row in rows:
-        keywords = json.loads(row["expected_keywords"])
-        expected_documents = json.loads(row["expected_documents"])
-        ask_result = compute_answer(AskRequest(question=row["question"], top_k=DEFAULT_TOP_K), user)
+    for row in cases:
+        keywords = row["expected_keywords"]
+        expected_documents = row["expected_documents"]
+        case_user = {**user, "role": row["actor_role"]}
+        case_access_levels = allowed_access_levels(case_user)
+        ask_result = compute_answer(AskRequest(question=row["question"], top_k=payload.top_k), case_user)
         score = keyword_score(ask_result["answer"], keywords, ask_result["confidence"])
         citation_hit = citation_hit_score(ask_result["citations"], expected_documents)
-        should_answer = bool(row["should_answer"])
+        should_answer = row["should_answer"]
         signals = evaluate_case_signals(
             answer=ask_result["answer"],
             confidence=ask_result["confidence"],
@@ -1618,10 +1821,14 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
             expected_keywords=keywords,
             expected_documents=expected_documents,
             should_answer=should_answer,
+            allowed_access_levels=case_access_levels,
         )
         results.append(
             {
                 "case_id": row["id"],
+                "case_key": row["case_key"],
+                "category": row["category"],
+                "actor_role": row["actor_role"],
                 "question": row["question"],
                 "expected_keywords": keywords,
                 "expected_documents": expected_documents,
@@ -1635,48 +1842,61 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
                 "reciprocal_rank": signals.reciprocal_rank,
                 "answer_correct": signals.answer_correct,
                 "abstention_correct": signals.abstention_correct,
+                "access_control_correct": signals.access_control_correct,
             }
         )
 
-    total = len(results)
-    avg_score = sum(item["score"] for item in results) / total
-    avg_confidence = sum(item["confidence"] for item in results) / total
-    citation_hit_rate = sum(item["citation_hit"] for item in results) / total
-    retrieval_results = [item for item in results if item["retrieval_recall"] is not None]
-    recall_at_k = (
-        sum(item["retrieval_recall"] for item in retrieval_results) / len(retrieval_results)
-        if retrieval_results
-        else 0.0
+    summary = summarize_evaluation_results(results)
+    versions = sorted({row["dataset_version"] for row in cases})
+    dataset_version = versions[0] if len(versions) == 1 else "mixed"
+    dataset_hash = cases_fingerprint(cases)
+    baseline = (
+        find_evaluation_baseline(payload.baseline_run_id, dataset_hash, payload.top_k)
+        if payload.use_baseline
+        else None
     )
-    reciprocal_results = [item for item in results if item["reciprocal_rank"] is not None]
-    mrr = (
-        sum(item["reciprocal_rank"] for item in reciprocal_results) / len(reciprocal_results)
-        if reciprocal_results
-        else 0.0
+    policy = QualityGatePolicy(
+        thresholds=payload.thresholds.model_dump(),
+        minimum_cases=payload.minimum_cases,
+        max_regression=payload.max_regression,
     )
-    answer_accuracy = sum(item["answer_correct"] for item in results) / total
-    abstention_accuracy = sum(item["abstention_correct"] for item in results) / total
+    gate = evaluate_quality_gate(summary, policy, baseline)
     created = utc_now()
 
     with get_conn() as conn:
         cursor = conn.execute(
             """
             INSERT INTO batch_eval_runs(
-                user_id, total, avg_score, avg_confidence, citation_hit_rate,
-                recall_at_k, mrr, answer_accuracy, abstention_accuracy, created_at
+                user_id, dataset_version, dataset_hash, top_k,
+                total, avg_score, avg_confidence, citation_hit_rate,
+                recall_at_k, mrr, answer_accuracy, abstention_accuracy, access_control_accuracy,
+                gate_status, thresholds_json, minimum_cases, max_regression,
+                failed_metrics_json, metric_deltas_json, baseline_run_id, baseline_reference, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user["id"],
-                total,
-                avg_score,
-                avg_confidence,
-                citation_hit_rate,
-                recall_at_k,
-                mrr,
-                answer_accuracy,
-                abstention_accuracy,
+                dataset_version,
+                dataset_hash,
+                payload.top_k,
+                summary["total"],
+                summary["avg_score"],
+                summary["avg_confidence"],
+                summary["citation_hit_rate"],
+                summary["recall_at_k"],
+                summary["mrr"],
+                summary["answer_accuracy"],
+                summary["abstention_accuracy"],
+                summary["access_control_accuracy"],
+                gate["status"],
+                json.dumps(gate["thresholds"], ensure_ascii=False),
+                gate["minimum_cases"],
+                gate["max_regression"],
+                json.dumps(gate["failed_metrics"], ensure_ascii=False),
+                json.dumps(gate["metric_deltas"], ensure_ascii=False),
+                gate["baseline_run_id"],
+                str(gate["baseline_reference"]) if gate["baseline_reference"] is not None else None,
                 created,
             ),
         )
@@ -1685,16 +1905,17 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
             conn.execute(
                 """
                 INSERT INTO batch_eval_results(
-                    run_id, case_id, question, expected_keywords, expected_documents,
+                    run_id, case_id, actor_role, question, expected_keywords, expected_documents,
                     answer, score, confidence, citation_hit, citations_json,
                     should_answer, retrieval_recall, reciprocal_rank,
-                    answer_correct, abstention_correct, created_at
+                    answer_correct, abstention_correct, access_control_correct, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
                     item["case_id"],
+                    item["actor_role"],
                     item["question"],
                     json.dumps(item["expected_keywords"], ensure_ascii=False),
                     json.dumps(item["expected_documents"], ensure_ascii=False),
@@ -1708,22 +1929,32 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
                     item["reciprocal_rank"],
                     item["answer_correct"],
                     item["abstention_correct"],
+                    item["access_control_correct"],
                     created,
                 ),
             )
 
+    write_audit(
+        user,
+        "run_evaluation_gate",
+        "batch_eval_run",
+        run_id,
+        {
+            "dataset_version": dataset_version,
+            "dataset_hash": dataset_hash,
+            "gate_status": gate["status"],
+            "failed_metrics": gate["failed_metrics"],
+        },
+    )
     return {
         "run_id": run_id,
-        "summary": {
-            "total": total,
-            "avg_score": round(avg_score, 4),
-            "avg_confidence": round(avg_confidence, 4),
-            "citation_hit_rate": round(citation_hit_rate, 4),
-            "recall_at_k": round(recall_at_k, 4),
-            "mrr": round(mrr, 4),
-            "answer_accuracy": round(answer_accuracy, 4),
-            "abstention_accuracy": round(abstention_accuracy, 4),
+        "dataset": {
+            "version": dataset_version,
+            "fingerprint": dataset_hash,
+            "top_k": payload.top_k,
         },
+        "summary": rounded_summary(summary),
+        "gate": gate,
         "results": [
             {
                 **item,
@@ -1754,8 +1985,11 @@ def list_batch_runs(
         total = conn.execute("SELECT COUNT(*) AS count FROM batch_eval_runs").fetchone()["count"]
         rows = conn.execute(
             """
-            SELECT r.id, r.total, r.avg_score, r.avg_confidence, r.citation_hit_rate,
-                   r.recall_at_k, r.mrr, r.answer_accuracy, r.abstention_accuracy, r.created_at,
+            SELECT r.id, r.dataset_version, r.dataset_hash, r.top_k,
+                   r.total, r.avg_score, r.avg_confidence, r.citation_hit_rate,
+                   r.recall_at_k, r.mrr, r.answer_accuracy, r.abstention_accuracy, r.access_control_accuracy,
+                   r.gate_status, r.thresholds_json, r.minimum_cases, r.max_regression,
+                   r.failed_metrics_json, r.metric_deltas_json, r.baseline_run_id, r.baseline_reference, r.created_at,
                    u.display_name
             FROM batch_eval_runs r
             LEFT JOIN users u ON u.id = r.user_id
@@ -1764,7 +1998,7 @@ def list_batch_runs(
             """,
             (page_size, offset),
         ).fetchall()
-    return paginated([dict(row) for row in rows], total, page, page_size)
+    return paginated([serialize_batch_run(row) for row in rows], total, page, page_size)
 
 
 @app.get("/api/evaluation/batch/runs/{run_id}/export")
@@ -1774,8 +2008,11 @@ def export_batch_run(run_id: int, format: str = "md", user: dict = Depends(curre
         if user["role"] in MANAGER_ROLES:
             run = conn.execute(
                 """
-                SELECT r.id, r.total, r.avg_score, r.avg_confidence, r.citation_hit_rate,
-                       r.recall_at_k, r.mrr, r.answer_accuracy, r.abstention_accuracy, r.created_at,
+                SELECT r.id, r.dataset_version, r.dataset_hash, r.top_k,
+                       r.total, r.avg_score, r.avg_confidence, r.citation_hit_rate,
+                       r.recall_at_k, r.mrr, r.answer_accuracy, r.abstention_accuracy, r.access_control_accuracy,
+                       r.gate_status, r.thresholds_json, r.minimum_cases, r.max_regression,
+                       r.failed_metrics_json, r.metric_deltas_json, r.baseline_run_id, r.baseline_reference, r.created_at,
                        u.display_name
                 FROM batch_eval_runs r
                 LEFT JOIN users u ON u.id = r.user_id
@@ -1786,8 +2023,11 @@ def export_batch_run(run_id: int, format: str = "md", user: dict = Depends(curre
         else:
             run = conn.execute(
                 """
-                SELECT r.id, r.total, r.avg_score, r.avg_confidence, r.citation_hit_rate,
-                       r.recall_at_k, r.mrr, r.answer_accuracy, r.abstention_accuracy, r.created_at,
+                SELECT r.id, r.dataset_version, r.dataset_hash, r.top_k,
+                       r.total, r.avg_score, r.avg_confidence, r.citation_hit_rate,
+                       r.recall_at_k, r.mrr, r.answer_accuracy, r.abstention_accuracy, r.access_control_accuracy,
+                       r.gate_status, r.thresholds_json, r.minimum_cases, r.max_regression,
+                       r.failed_metrics_json, r.metric_deltas_json, r.baseline_run_id, r.baseline_reference, r.created_at,
                        u.display_name
                 FROM batch_eval_runs r
                 LEFT JOIN users u ON u.id = r.user_id
@@ -1799,9 +2039,10 @@ def export_batch_run(run_id: int, format: str = "md", user: dict = Depends(curre
             raise HTTPException(status_code=404, detail="批量评测记录不存在")
         rows = conn.execute(
             """
-            SELECT question, expected_keywords, expected_documents, answer, score,
+            SELECT actor_role, question, expected_keywords, expected_documents, answer, score,
                    confidence, citation_hit, citations_json, should_answer,
-                   retrieval_recall, reciprocal_rank, answer_correct, abstention_correct
+                   retrieval_recall, reciprocal_rank, answer_correct, abstention_correct,
+                   access_control_correct
             FROM batch_eval_results
             WHERE run_id = ?
             ORDER BY id
@@ -1809,7 +2050,7 @@ def export_batch_run(run_id: int, format: str = "md", user: dict = Depends(curre
             (run_id,),
         ).fetchall()
 
-    run_dict = dict(run)
+    run_dict = serialize_batch_run(run)
     results = [dict(row) for row in rows]
     if format.lower() == "csv":
         content = render_batch_csv(run_dict, results)
@@ -2773,6 +3014,65 @@ def citation_hit_score(citations: list[dict], expected_documents: list[str]) -> 
     return hits / len(expected_documents)
 
 
+def find_evaluation_baseline(requested_run_id: int | None, dataset_hash: str, top_k: int) -> dict | None:
+    with get_conn() as conn:
+        if requested_run_id:
+            row = conn.execute(
+                """
+                SELECT id, dataset_hash, top_k, recall_at_k, mrr,
+                       answer_accuracy, abstention_accuracy, access_control_accuracy
+                FROM batch_eval_runs WHERE id = ?
+                """,
+                (requested_run_id,),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="指定的评测基线不存在")
+            if row["dataset_hash"] != dataset_hash or row["top_k"] != top_k:
+                raise HTTPException(status_code=409, detail="评测基线的数据集或 Top K 与当前运行不一致")
+            result = dict(row)
+            result["reference"] = f"历史运行 #{result['id']}"
+            return result
+        row = conn.execute(
+            """
+            SELECT id, dataset_hash, top_k, recall_at_k, mrr,
+                   answer_accuracy, abstention_accuracy, access_control_accuracy
+            FROM batch_eval_runs
+            WHERE dataset_hash = ? AND top_k = ? AND gate_status = 'passed'
+            ORDER BY id DESC LIMIT 1
+            """,
+            (dataset_hash, top_k),
+        ).fetchone()
+    if row:
+        result = dict(row)
+        result["reference"] = f"历史运行 #{result['id']}"
+        return result
+    approved = load_evaluation_baseline()
+    if approved["dataset_fingerprint"] != dataset_hash or approved["top_k"] != top_k:
+        return None
+    return {
+        "id": None,
+        "reference": approved["version"],
+        **approved["metrics"],
+    }
+
+
+def serialize_evaluation_case(row) -> dict:
+    item = dict(row)
+    item["expected_keywords"] = json.loads(item["expected_keywords"])
+    item["expected_documents"] = json.loads(item["expected_documents"])
+    item["should_answer"] = bool(item["should_answer"])
+    item["is_golden"] = bool(item.get("case_key"))
+    return item
+
+
+def serialize_batch_run(row) -> dict:
+    item = dict(row)
+    item["thresholds"] = json.loads(item.pop("thresholds_json", "{}") or "{}")
+    item["failed_metrics"] = json.loads(item.pop("failed_metrics_json", "[]") or "[]")
+    item["metric_deltas"] = json.loads(item.pop("metric_deltas_json", "{}") or "{}")
+    return item
+
+
 def serialize_user(row) -> dict:
     item = dict(row)
     item["is_active"] = bool(item["is_active"])
@@ -2792,11 +3092,29 @@ def serialize_feedback(row) -> dict:
 
 
 def render_batch_markdown(run: dict, results: list[dict]) -> str:
+    gate_label = "通过" if run.get("gate_status") == "passed" else "失败"
+    baseline_label = run.get("baseline_reference") or (
+        f"#{run['baseline_run_id']}" if run.get("baseline_run_id") else "首次运行"
+    )
+    failed_metrics = ", ".join(run.get("failed_metrics") or []) or "无"
+    threshold_text = ", ".join(
+        f"{metric}>={float(value):.2%}" for metric, value in (run.get("thresholds") or {}).items()
+    )
+    delta_text = ", ".join(
+        f"{metric} {float(value):+.2%}" for metric, value in (run.get("metric_deltas") or {}).items()
+    )
     lines = [
         f"# 批量评测报告 #{run['id']}",
         "",
         f"- 运行时间：{run['created_at']}",
         f"- 运行人：{run.get('display_name') or '未知'}",
+        f"- 数据集：{run.get('dataset_version', 'custom')} ({run.get('dataset_hash', '')[:12]})",
+        f"- 检索 Top K：{run.get('top_k', DEFAULT_TOP_K)}",
+        f"- 质量门禁：{gate_label}",
+        f"- 失败指标：{failed_metrics}",
+        f"- 指标阈值：{threshold_text or '未配置'}",
+        f"- 对比基线：{baseline_label}",
+        f"- 指标变化：{delta_text or '无历史基线'}",
         f"- 用例总数：{run['total']}",
         f"- 平均得分：{run['avg_score']:.2%}",
         f"- 平均置信度：{run['avg_confidence']:.2%}",
@@ -2805,6 +3123,7 @@ def render_batch_markdown(run: dict, results: list[dict]) -> str:
         f"- MRR：{run.get('mrr', 0):.4f}",
         f"- 答案正确率：{run.get('answer_accuracy', 0):.2%}",
         f"- 拒答准确率：{run.get('abstention_accuracy', 0):.2%}",
+        f"- 访问控制准确率：{run.get('access_control_accuracy', 0):.2%}",
         "",
         "## 明细",
         "",
@@ -2818,6 +3137,7 @@ def render_batch_markdown(run: dict, results: list[dict]) -> str:
             [
                 f"### {index}. {row['question']}",
                 "",
+                f"- 执行角色：{row.get('actor_role', 'admin')}",
                 f"- 期望关键词：{keywords}",
                 f"- 期望来源：{docs}",
                 f"- 得分：{row['score']:.2%}",
@@ -2828,6 +3148,7 @@ def render_batch_markdown(run: dict, results: list[dict]) -> str:
                 f"- Reciprocal Rank：{row['reciprocal_rank']:.4f}" if row.get("reciprocal_rank") is not None else "- Reciprocal Rank：N/A",
                 f"- 答案判断：{'正确' if row.get('answer_correct') else '错误'}",
                 f"- 拒答判断：{'正确' if row.get('abstention_correct') else '错误'}",
+                f"- 访问控制：{'正确' if row.get('access_control_correct') else '错误'}",
                 f"- 命中来源：{citation_titles or '无'}",
                 "",
                 row["answer"],
@@ -2899,6 +3220,40 @@ def render_health_csv(report: dict) -> str:
     return "\ufeff" + "\n".join(lines)
 
 
+def get_agent_run_for_user(run_id: int, user: dict) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT a.id, a.goal, a.status, a.final_answer, a.user_id,
+                   a.tool_calls_json, a.plan_json, a.planner_mode, a.error_message,
+                   a.started_at, a.completed_at, a.created_at, a.execution_mode,
+                   a.top_k, a.idempotency_key, a.parent_run_id,
+                   a.cancel_requested_at, a.updated_at,
+                   u.username, u.display_name
+            FROM agent_runs a
+            LEFT JOIN users u ON u.id = a.user_id
+            WHERE a.id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+    if not row or (user["role"] not in MANAGER_ROLES and row["user_id"] != user["id"]):
+        raise HTTPException(status_code=404, detail="Agent 运行记录不存在")
+    return serialize_agent_run(row)
+
+
+def serialize_agent_run(row) -> dict:
+    item = dict(row)
+    try:
+        item["tool_calls"] = json.loads(item.pop("tool_calls_json") or "[]")
+    except json.JSONDecodeError:
+        item["tool_calls"] = []
+    try:
+        item["plan"] = json.loads(item.pop("plan_json") or "{}")
+    except json.JSONDecodeError:
+        item["plan"] = {}
+    return item
+
+
 def summarize_ai_usage(raw_items: list[str]) -> dict:
     summary = {
         "request_count": 0,
@@ -2967,6 +3322,7 @@ def summarize_agent_metrics(rows) -> dict:
 def render_batch_csv(run: dict, results: list[dict]) -> str:
     header = [
         "run_id",
+        "actor_role",
         "question",
         "expected_keywords",
         "expected_documents",
@@ -2978,12 +3334,14 @@ def render_batch_csv(run: dict, results: list[dict]) -> str:
         "reciprocal_rank",
         "answer_correct",
         "abstention_correct",
+        "access_control_correct",
         "answer",
     ]
     lines = [",".join(header)]
     for row in results:
         values = [
             str(run["id"]),
+            row.get("actor_role", "admin"),
             row["question"],
             ";".join(json.loads(row["expected_keywords"])),
             ";".join(json.loads(row["expected_documents"])),
@@ -2995,6 +3353,7 @@ def render_batch_csv(run: dict, results: list[dict]) -> str:
             "" if row.get("reciprocal_rank") is None else f"{row['reciprocal_rank']:.4f}",
             str(int(row.get("answer_correct") or 0)),
             str(int(row.get("abstention_correct") or 0)),
+            str(int(row.get("access_control_correct") or 0)),
             row["answer"],
         ]
         lines.append(",".join(csv_escape(value) for value in values))

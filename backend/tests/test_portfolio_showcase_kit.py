@@ -84,3 +84,24 @@ def test_showcase_markdown_links_resolve():
             if not target.exists():
                 missing.append(f"{doc.relative_to(ROOT)} -> {target.relative_to(ROOT)}")
     assert missing == []
+
+
+def test_interview_demo_checklist_covers_preflight_and_failure_modes():
+    checklist = ROOT / "docs" / "interview_demo_checklist.md"
+    assert checklist.exists()
+    text = checklist.read_text(encoding="utf-8")
+    for phrase in [
+        "面试前五分钟",
+        "八分钟主线",
+        "火星差旅费用如何报销",
+        "Embedding 未配置",
+        "LLM 未配置或调用失败",
+        "不要这样讲",
+    ]:
+        assert phrase in text
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    resume = (ROOT / "docs" / "resume_project_card.md").read_text(encoding="utf-8")
+    assert "docs/interview_demo_checklist.md" in readme
+    assert "interview_demo_checklist.md" in resume
+    assert "129 项" in resume

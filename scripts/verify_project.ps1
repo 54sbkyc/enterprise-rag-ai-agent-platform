@@ -17,28 +17,40 @@ Write-Host ""
 
 Push-Location $Backend
 try {
-    Write-Host "[1/4] python -m compileall"
+    Write-Host "[1/6] python -m compileall"
     & $Python -m compileall -q app
     if ($LASTEXITCODE -ne 0) {
         throw "compileall failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "[2/4] python -m pip check"
+    Write-Host "[2/6] locked requirements"
+    & $Python check_requirements.py
+    if ($LASTEXITCODE -ne 0) {
+        throw "locked requirements check failed with exit code $LASTEXITCODE"
+    }
+
+    Write-Host "[3/6] python -m pip check"
     & $Python -m pip check
     if ($LASTEXITCODE -ne 0) {
         throw "pip check failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "[3/4] python -m pytest"
+    Write-Host "[4/6] python -m pytest"
     & $Python -m pytest
     if ($LASTEXITCODE -ne 0) {
         throw "pytest failed with exit code $LASTEXITCODE"
+    }
+
+    Write-Host "[5/6] deterministic RAG quality gate"
+    & $Python -m app.eval_gate_cli --output (Join-Path $Root ".runtime\evaluation-gate-report.json")
+    if ($LASTEXITCODE -ne 0) {
+        throw "RAG quality gate failed with exit code $LASTEXITCODE"
     }
 } finally {
     Pop-Location
 }
 
-Write-Host "[4/4] GitHub release readiness"
+Write-Host "[6/6] GitHub release readiness"
 & (Join-Path $PSScriptRoot "prepare_github_release.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "GitHub release readiness failed with exit code $LASTEXITCODE"
