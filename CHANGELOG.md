@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-22
+
+面向 AI 应用开发作品集的可靠性与安全增强版本。
+
 ### Added
 
 - Agent 支持进程内异步任务、持久化状态、幂等提交、协作式取消和失败任务重试。
@@ -25,6 +29,19 @@
 - 修复企业样例 Markdown 一级标题被写成问号占位符的问题。
 - 将关键词召回升级为正文 70%、标题 30% 的字段加权 BM25，修复通用流程词压过精确标题的问题。
 - 发布验收新增锁定依赖完整性检查，避免 `pip check` 无法发现声明依赖未安装的问题。
+
+### Validation
+
+- 129 项 pytest 自动化测试通过。
+- 12 条角色化黄金用例全部通过，Recall@K、MRR、答案、拒答与访问控制准确率均为 100%。
+- GitHub Actions 完成锁定依赖检查、全量测试、确定性 RAG 门禁和 JSON 报告上传。
+- Playwright 覆盖桌面与 390x844 手机视口，确认评测中心无横向溢出。
+
+### Known Boundaries
+
+- SQLite 与进程内 Agent 执行器适合单实例演示和小规模部署，不代表多实例生产架构。
+- 受限主题预检只读取不可访问文档标题元数据；生产环境仍应升级为文档级 ACL 与策略引擎。
+- 向量存储仍使用 SQLite JSON；大规模语料应迁移 PostgreSQL + pgvector 并接入独立 rerank。
 
 ## [1.1.0] - 2026-07-10
 
@@ -58,4 +75,6 @@
 - Agent 当前同步执行；生产环境仍需异步队列、幂等、取消和人工审批。
 - 关键条件覆盖率是可配置启发式规则，需要用真实业务评测集持续校准。
 
+[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0

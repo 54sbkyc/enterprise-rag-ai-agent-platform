@@ -5,7 +5,7 @@
 相关材料：
 
 - GitHub 仓库：[enterprise-rag-ai-agent-platform](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform)
-- 正式版本：[v1.1.0](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.1.0)
+- 正式版本：[v1.2.0](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.2.0)
 - 持续集成：[GitHub Actions](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml)
 - 面试讲解：[interview_talking_points.md](interview_talking_points.md)
 - 面试前检查：[interview_demo_checklist.md](interview_demo_checklist.md)

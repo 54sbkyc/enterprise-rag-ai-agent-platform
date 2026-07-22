@@ -23,7 +23,7 @@ UPLOAD_DIR = Path(os.environ.get("RAG_UPLOAD_DIR", DATA_DIR / "uploads"))
 DB_PATH = Path(os.environ.get("RAG_DB_PATH", DATA_DIR / "rag_platform.db"))
 
 APP_NAME = "企业知识库问答管理系统"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 120

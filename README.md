@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/54sbkyc/enterprise-rag-ai-agent-platform)](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases)
 [![License](https://img.shields.io/github/license/54sbkyc/enterprise-rag-ai-agent-platform)](LICENSE)
 
-一个面向 AI 应用开发岗位的 Python 全栈项目。当前实用性增强版本为 `v1.1.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志和 AI 调用可观测。
+一个面向 AI 应用开发岗位的 Python 全栈项目。当前角色化安全增强版本为 `v1.2.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志和 AI 调用可观测。
 
 这个项目不是单纯的聊天页面，而是一个可以向面试官展示工程闭环的 AI 应用：能回答、能追溯、能评测、能治理、能看到成本和运行过程。
 
@@ -19,7 +19,7 @@
 | [面试演示检查清单](docs/interview_demo_checklist.md) | 面试前一天和前五分钟的环境、主线与故障预案检查。 |
 | [生产化路线图](docs/production_roadmap.md) | 说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent 和 ACL 升级路径。 |
 | [最终验收报告](docs/final_acceptance_report.md) | 说明发布前验收、工程完整度和诚实边界。 |
-| [v1.1.0 版本说明](docs/releases/v1.1.0.md) | 查看首个公开版本的能力、验证结果和生产化边界。 |
+| [v1.2.0 版本说明](docs/releases/v1.2.0.md) | 查看角色化 RAG 安全、异步 Agent、质量门禁和验证结果。 |
 | [变更记录](CHANGELOG.md) | 按版本追踪公开仓库的重要变化。 |
 | [GitHub 发布清单](docs/github_release_checklist.md) | 确认哪些文件该提交、哪些本地资料不进入公开仓库。 |
 | [安全说明](SECURITY.md) | 说明密钥、本地数据、Prompt 注入、权限控制和 AI 安全边界。 |
@@ -220,7 +220,7 @@ enterprise-rag-qa
 │  │  ├─ agent_planner.py     # 受控模型规划与计划校验
 │  │  ├─ evaluation_dataset.py # 黄金数据集加载、校验和指纹
 │  │  ├─ evaluation_gate.py   # 阈值与批准/历史基线门禁
-│  │  ├─ evaluation_metrics.py # Recall、MRR、答案与拒答指标
+│  │  ├─ evaluation_metrics.py # Recall、MRR、答案、拒答与访问控制指标
 │  │  ├─ eval_gate_cli.py     # 隔离运行的 CI 质量门禁
 │  │  ├─ qa.py                # 回答生成
 │  │  ├─ security.py          # 安全拦截与脱敏
