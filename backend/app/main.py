@@ -236,6 +236,26 @@ def health() -> dict:
     return {"name": APP_NAME, "version": APP_VERSION, "status": "ok"}
 
 
+@app.get("/api/health/live")
+def liveness() -> dict:
+    return {"name": APP_NAME, "version": APP_VERSION, "status": "alive"}
+
+
+@app.get("/api/health/ready")
+def readiness() -> dict:
+    try:
+        with get_conn() as conn:
+            conn.execute("SELECT 1").fetchone()
+    except Exception:
+        raise HTTPException(status_code=503, detail="service is not ready") from None
+    return {
+        "name": APP_NAME,
+        "version": APP_VERSION,
+        "status": "ready",
+        "database": "ok",
+    }
+
+
 @app.post("/api/auth/login")
 def login(payload: LoginRequest) -> dict:
     return create_session(payload.username.strip(), payload.password)

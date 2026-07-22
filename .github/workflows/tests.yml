@@ -57,3 +57,87 @@ jobs:
           name: rag-quality-gate-report
           path: .runtime/evaluation-gate-report.json
           if-no-files-found: error
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Validate Compose configuration
+        run: |
+          RAG_BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -hex 24)" docker compose config --quiet
+
+      - name: Build runtime image
+        run: docker build --tag enterprise-rag-ai-agent-platform:ci .
+
+      - name: Reject insecure production bootstrap
+        run: |
+          if docker run --rm --name rag-missing-secret enterprise-rag-ai-agent-platform:ci >missing-secret.log 2>&1; then
+            cat missing-secret.log
+            echo "Production container unexpectedly started without a bootstrap password."
+            exit 1
+          fi
+          grep -q "RAG_BOOTSTRAP_ADMIN_PASSWORD" missing-secret.log
+
+      - name: Start hardened container
+        run: |
+          password="$(openssl rand -hex 24)"
+          echo "RAG_CI_ADMIN_PASSWORD=$password" >> "$GITHUB_ENV"
+          docker volume create rag-ci-data
+          docker run --detach \
+            --name rag-smoke \
+            --publish 127.0.0.1:18000:8000 \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=128m \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --volume rag-ci-data:/app/data \
+            --env RAG_RUNTIME_ENV=production \
+            --env RAG_BOOTSTRAP_ADMIN_USERNAME=ci-admin \
+            --env "RAG_BOOTSTRAP_ADMIN_PASSWORD=$password" \
+            enterprise-rag-ai-agent-platform:ci
+
+      - name: Verify health, non-root user, and login
+        run: |
+          ready=false
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:18000/api/health/ready >ready.json; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != "true" ]; then
+            docker logs rag-smoke
+            exit 1
+          fi
+          python -c "import json; data=json.load(open('ready.json')); assert data['status']=='ready' and data['database']=='ok'"
+          docker exec rag-smoke python -c "import os; assert os.getuid() == 10001"
+          curl --fail --silent \
+            --header "Content-Type: application/json" \
+            --data "{\"username\":\"ci-admin\",\"password\":\"$RAG_CI_ADMIN_PASSWORD\"}" \
+            http://127.0.0.1:18000/api/auth/login >login.json
+          python -c "import json; data=json.load(open('login.json')); assert data['token'] and data['user']['role']=='admin'"
+
+      - name: Verify persisted restart
+        run: |
+          docker restart rag-smoke
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:18000/api/health/ready >ready-after-restart.json; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs rag-smoke
+          exit 1
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs rag-smoke || true
+
+      - name: Clean up smoke resources
+        if: always()
+        run: |
+          docker rm --force rag-smoke 2>/dev/null || true
+          docker volume rm rag-ci-data 2>/dev/null || true

@@ -6,7 +6,12 @@ from typing import Any
 
 from fastapi import Header, HTTPException
 
-from .config import SESSION_TTL_HOURS
+from .config import (
+    BOOTSTRAP_ADMIN_PASSWORD,
+    BOOTSTRAP_ADMIN_USERNAME,
+    RUNTIME_ENV,
+    SESSION_TTL_HOURS,
+)
 from .db import get_conn, utc_now
 
 
@@ -49,6 +54,10 @@ def verify_password(stored_hash: str, password: str) -> bool:
 
 
 def seed_default_users() -> None:
+    if RUNTIME_ENV == "production":
+        seed_production_admin()
+        return
+
     defaults = [
         ("admin", "admin123", ADMIN_ROLE, "系统管理员"),
         ("employee", "user123", EMPLOYEE_ROLE, "普通员工"),
@@ -65,6 +74,40 @@ def seed_default_users() -> None:
                 """,
                 (username, hash_password(password), role, display_name, utc_now()),
             )
+
+
+def seed_production_admin() -> None:
+    with get_conn() as conn:
+        existing_admin = conn.execute(
+            "SELECT id FROM users WHERE role = ? LIMIT 1",
+            (ADMIN_ROLE,),
+        ).fetchone()
+        if existing_admin:
+            return
+
+        username = BOOTSTRAP_ADMIN_USERNAME.strip()
+        password = BOOTSTRAP_ADMIN_PASSWORD
+        if not 2 <= len(username) <= 32 or any(character.isspace() for character in username):
+            raise RuntimeError(
+                "RAG_BOOTSTRAP_ADMIN_USERNAME must contain 2-32 characters without whitespace"
+            )
+        if len(password) < 12:
+            raise RuntimeError(
+                "RAG_BOOTSTRAP_ADMIN_PASSWORD is required in production and must be at least 12 characters"
+            )
+        collision = conn.execute(
+            "SELECT id FROM users WHERE username = ? LIMIT 1",
+            (username,),
+        ).fetchone()
+        if collision:
+            raise RuntimeError("RAG_BOOTSTRAP_ADMIN_USERNAME is already used by a non-admin account")
+        conn.execute(
+            """
+            INSERT INTO users(username, password_hash, role, display_name, is_active, created_at)
+            VALUES (?, ?, ?, ?, 1, ?)
+            """,
+            (username, hash_password(password), ADMIN_ROLE, "平台管理员", utc_now()),
+        )
 
 
 def create_session(username: str, password: str) -> dict[str, Any]:
