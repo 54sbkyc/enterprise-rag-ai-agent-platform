@@ -1,10 +1,12 @@
 import json
 import math
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from .config import positive_int_env
 from .db import get_conn
 from .embeddings import embed_query
+from .lexical_index import lexical_candidate_limit, search_lexical_candidates
 from .text_processing import token_counts, tokenize
 from .vector_store import (
     VectorStoreConfigurationError,
@@ -19,6 +21,8 @@ BM25_B = 0.75
 BM25_CONTENT_WEIGHT = 0.70
 BM25_TITLE_WEIGHT = 0.30
 RESTRICTED_TITLE_COVERAGE = 0.25
+MAX_VECTOR_CANDIDATE_LIMIT = 1000
+SQLITE_CANDIDATE_BATCH_SIZE = 500
 
 
 @dataclass
@@ -40,24 +44,92 @@ class SearchHit:
     vector_backend: str = "none"
     vector_degraded: bool = False
     vector_error: str | None = None
+    lexical_backend: str = "sqlite_fts5"
+    lexical_degraded: bool = False
+    lexical_error: str | None = None
+    candidate_count: int = 0
+    corpus_count: int = 0
+
+
+@dataclass(frozen=True)
+class _VectorCandidates:
+    backend: str
+    scores: dict[int, float] = field(default_factory=dict)
+    degraded: bool = False
+    error: str | None = None
+    requires_local_scan: bool = False
 
 
 def search_chunks(question: str, top_k: int, access_levels: list[str] | None = None) -> list[SearchHit]:
     access_levels = access_levels or ["public", "internal"]
     placeholders = ",".join("?" for _ in access_levels)
     with get_conn() as conn:
-        rows = conn.execute(
+        document_rows = conn.execute(
             f"""
-            SELECT c.id, c.document_id, c.chunk_index, c.content, c.token_json,
-                   c.embedding_json, c.embedding_model, d.title, d.filename, d.access_level
-            FROM chunks c
-            JOIN documents d ON d.id = c.document_id
-            WHERE d.access_level IN ({placeholders}) AND d.status = 'ready'
-            ORDER BY c.id DESC
+            SELECT id
+            FROM documents
+            WHERE access_level IN ({placeholders}) AND status = 'ready'
             """,
             access_levels,
         ).fetchall()
+        allowed_document_ids = [int(row["id"]) for row in document_rows]
+        if not allowed_document_ids:
+            return []
+        corpus_count = int(
+            conn.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM chunks c
+                JOIN documents d ON d.id = c.document_id
+                WHERE d.access_level IN ({placeholders}) AND d.status = 'ready'
+                """,
+                access_levels,
+            ).fetchone()["count"]
+        )
+        model_row = conn.execute(
+            f"""
+            SELECT c.embedding_model, COUNT(*) AS count
+            FROM chunks c
+            JOIN documents d ON d.id = c.document_id
+            WHERE d.access_level IN ({placeholders})
+              AND d.status = 'ready'
+              AND c.embedding_model IS NOT NULL
+              AND c.embedding_model != ''
+            GROUP BY c.embedding_model
+            ORDER BY count DESC, c.embedding_model
+            LIMIT 1
+            """,
+            access_levels,
+        ).fetchone()
+        lexical_result = search_lexical_candidates(
+            conn,
+            question,
+            access_levels,
+            lexical_candidate_limit(top_k),
+        )
 
+    if not corpus_count:
+        return []
+
+    embedding_model = model_row["embedding_model"] if model_row else None
+    query_embedding = embed_query(question, embedding_model) if embedding_model else None
+    vector_result = _vector_candidates(
+        query_embedding,
+        embedding_model,
+        allowed_document_ids,
+        top_k,
+    )
+    candidate_ids = set(lexical_result.chunk_ids) | set(vector_result.scores)
+    use_full_scan = lexical_result.status != "ready" or vector_result.requires_local_scan
+    if not candidate_ids and not use_full_scan:
+        return []
+
+    with get_conn() as conn:
+        rows = _load_candidate_rows(
+            conn,
+            access_levels,
+            None if use_full_scan else sorted(candidate_ids),
+        )
     if not rows:
         return []
 
@@ -72,15 +144,10 @@ def search_chunks(question: str, top_k: int, access_levels: list[str] | None = N
         for content_score, title_score in zip(content_bm25, title_bm25)
     ]
 
-    embedding_models = Counter(row["embedding_model"] for row in rows if row["embedding_model"])
-    embedding_model = embedding_models.most_common(1)[0][0] if embedding_models else None
-    query_embedding = embed_query(question, embedding_model) if embedding_model else None
-    vector_raw, vector_backend, vector_degraded, vector_error = _vector_scores(
-        rows,
-        query_embedding,
-        embedding_model,
-        top_k,
-    )
+    if vector_result.requires_local_scan:
+        vector_raw = _local_vector_scores(rows, query_embedding)
+    else:
+        vector_raw = [vector_result.scores.get(int(row["id"]), 0.0) for row in rows]
     vector_normalized = _normalize_positive(vector_raw)
     hybrid_active = bool(query_embedding and any(vector_normalized))
 
@@ -116,18 +183,28 @@ def search_chunks(question: str, top_k: int, access_levels: list[str] | None = N
                 vector_score=round(vector_raw[index], 6),
                 rerank_score=round(rerank_score, 6),
                 retrieval_mode=retrieval_mode,
-                vector_backend=vector_backend,
-                vector_degraded=vector_degraded,
-                vector_error=vector_error,
+                vector_backend=vector_result.backend,
+                vector_degraded=vector_result.degraded,
+                vector_error=vector_result.error,
+                lexical_backend=lexical_result.backend,
+                lexical_degraded=lexical_result.status != "ready",
+                lexical_error=lexical_result.error,
+                candidate_count=len(rows),
+                corpus_count=corpus_count,
             )
         )
 
     return sorted(ranked, key=lambda item: (item.score, item.bm25_score, item.vector_score), reverse=True)[:top_k]
 
 
-def _vector_scores(rows, query_embedding, embedding_model, top_k: int) -> tuple[list[float], str, bool, str | None]:
+def _vector_candidates(
+    query_embedding: list[float] | None,
+    embedding_model: str | None,
+    allowed_document_ids: list[int],
+    top_k: int,
+) -> _VectorCandidates:
     if not query_embedding or not embedding_model:
-        return [0.0 for _ in rows], "none", False, None
+        return _VectorCandidates(backend="none")
 
     try:
         backend = vector_store_backend()
@@ -141,26 +218,70 @@ def _vector_scores(rows, query_embedding, embedding_model, top_k: int) -> tuple[
         result = query_chunk_vectors(
             query_embedding,
             embedding_model,
-            [int(row["id"]) for row in rows],
-            min(len(rows), max(50, top_k * 8)),
+            allowed_document_ids,
+            _vector_candidate_limit(top_k),
         )
         if result.status == "ready":
-            return [result.scores.get(int(row["id"]), 0.0) for row in rows], "pgvector", False, None
+            return _VectorCandidates(backend="pgvector", scores=result.scores)
         if not vector_store_fallback_enabled():
-            return [0.0 for _ in rows], "pgvector", True, result.error
-        configuration_error = result.error
-        backend = "sqlite_fallback"
+            return _VectorCandidates(backend="pgvector", degraded=True, error=result.error)
+        return _VectorCandidates(
+            backend="sqlite_fallback",
+            degraded=True,
+            error=result.error,
+            requires_local_scan=True,
+        )
     elif backend == "invalid" and not vector_store_fallback_enabled():
-        return [0.0 for _ in rows], "invalid", True, configuration_error
+        return _VectorCandidates(backend="invalid", degraded=True, error=configuration_error)
 
+    degraded = backend in {"invalid", "sqlite_fallback"}
+    public_backend = "sqlite_json" if backend == "sqlite" else backend
+    return _VectorCandidates(
+        backend=public_backend,
+        degraded=degraded,
+        error=configuration_error,
+        requires_local_scan=True,
+    )
+
+
+def _vector_candidate_limit(top_k: int) -> int:
+    configured = positive_int_env("RAG_VECTOR_CANDIDATE_LIMIT", 100)
+    return max(top_k, min(configured, MAX_VECTOR_CANDIDATE_LIMIT))
+
+
+def _local_vector_scores(rows, query_embedding: list[float] | None) -> list[float]:
+    if not query_embedding:
+        return [0.0 for _ in rows]
     embeddings = [_json_vector(row["embedding_json"]) for row in rows]
-    scores = [
+    return [
         max(0.0, _dense_cosine(query_embedding, vector)) if vector else 0.0
         for vector in embeddings
     ]
-    degraded = backend in {"invalid", "sqlite_fallback"}
-    public_backend = "sqlite_json" if backend == "sqlite" else backend
-    return scores, public_backend, degraded, configuration_error
+
+
+def _load_candidate_rows(conn, access_levels: list[str], chunk_ids: list[int] | None):
+    access_placeholders = ",".join("?" for _ in access_levels)
+    base_query = f"""
+        SELECT c.id, c.document_id, c.chunk_index, c.content, c.token_json,
+               c.embedding_json, c.embedding_model, d.title, d.filename, d.access_level
+        FROM chunks c
+        JOIN documents d ON d.id = c.document_id
+        WHERE d.access_level IN ({access_placeholders}) AND d.status = 'ready'
+    """
+    if chunk_ids is None:
+        return conn.execute(f"{base_query} ORDER BY c.id DESC", access_levels).fetchall()
+
+    rows = []
+    for start in range(0, len(chunk_ids), SQLITE_CANDIDATE_BATCH_SIZE):
+        batch = chunk_ids[start : start + SQLITE_CANDIDATE_BATCH_SIZE]
+        id_placeholders = ",".join("?" for _ in batch)
+        rows.extend(
+            conn.execute(
+                f"{base_query} AND c.id IN ({id_placeholders}) ORDER BY c.id DESC",
+                (*access_levels, *batch),
+            ).fetchall()
+        )
+    return rows
 
 
 def has_restricted_topic_match(question: str, access_levels: list[str]) -> bool:

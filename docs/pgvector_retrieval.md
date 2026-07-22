@@ -7,11 +7,11 @@
 ## 1. 工作方式
 
 1. 文档入库或重建 Embedding 后，应用先完成 SQLite 事务，再把 `chunk_id`、`document_id`、模型、内容哈希和向量幂等写入 pgvector。
-2. 查询时先从 SQLite 读取当前角色可访问且状态为 `ready` 的片段，再把这些实时 `chunk_id` 作为 pgvector 候选白名单。
-3. pgvector 使用余弦距离 HNSW 索引返回候选，应用再与字段加权 BM25、本地重排分数融合。
+2. 查询时先从 SQLite 读取当前角色可访问且状态为 `ready` 的文档 ID，再把这些实时 `document_id` 作为 pgvector 过滤条件。
+3. pgvector 使用余弦距离 HNSW 索引返回有限语义候选；SQLite FTS5 返回有限关键词候选，应用合并后再执行字段加权 BM25 与本地重排。
 4. pgvector 不可用时，默认回退到 SQLite JSON 向量；搜索解释、引用和 Agent 输出会标记 `vector_backend`、`vector_degraded`，不会伪装成正常 pgvector 检索。
 
-权限过滤始终以 SQLite 当前状态为准。即使文档刚修改密级、外部索引暂时未同步或存在孤儿向量，旧向量也不在允许的 `chunk_id` 集合中，不能被低权限用户召回。
+权限过滤始终以 SQLite 当前状态为准。即使文档刚修改密级、外部索引暂时未同步或存在孤儿向量，旧向量所属文档也不在允许的 `document_id` 集合中；最终候选还必须关联回当前 SQLite 片段，不能被低权限用户召回。
 
 ## 2. 配置并启动
 
@@ -83,4 +83,4 @@ Invoke-RestMethod `
 
 GitHub Actions 的 `pgvector-integration` Job 会启动官方 pgvector PostgreSQL 镜像，真实执行扩展初始化、HNSW 建索引、批量 upsert、余弦查询、候选权限过滤、更新和删除测试。
 
-当前仍保留两项诚实边界：BM25 会读取当前可访问片段进行本地计算；业务数据库仍是单实例 SQLite。下一阶段若要支持大规模多实例，应继续迁移业务表、全文检索和任务队列，而不是把“接入 pgvector”描述为完整 PostgreSQL 改造。
+当前仍保留两项诚实边界：业务数据库仍是单实例 SQLite；默认 SQLite JSON 向量和 pgvector 故障后的本地向量降级仍会扫描可访问向量。正常 pgvector 模式下，FTS5 与 HNSW 都只返回有限候选。若要支持大规模多实例，应继续迁移业务表和任务队列，而不是把“接入 pgvector”描述为完整 PostgreSQL 改造。

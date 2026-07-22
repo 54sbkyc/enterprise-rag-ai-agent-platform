@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-22
+
+面向有界关键词召回、混合检索扩展性和实时权限复核的检索升级版本。
+
+### Added
+
+- 新增自动同步的 SQLite FTS5 关键词索引，复用应用中文分词并覆盖片段新增、修改、删除与文档标题更新。
+- 新增有界关键词和向量候选配置，以及 `lexical_backend`、降级原因、候选数和语料总数诊断字段。
+
+### Changed
+
+- 混合检索改为先合并 FTS5 关键词候选和 pgvector HNSW 语义候选，再回载小集合执行字段加权 BM25、重排和实时 ACL 复核。
+- pgvector 权限过滤由全量允许片段 ID 改为实时允许文档 ID，避免先把全部片段 ID 传入向量查询。
+
+### Validation
+
+- 152 项 pytest 自动化测试和 2 项真实 pgvector PostgreSQL 集成测试通过。
+- 12 条角色化黄金用例全部通过，Recall@K、MRR、答案、拒答与访问控制准确率均为 100%。
+
 ## [1.4.0] - 2026-07-22
 
 面向大语料向量检索、故障透明度和真实 PostgreSQL 验证的检索基础设施版本。
@@ -138,7 +157,8 @@
 - Agent 当前同步执行；生产环境仍需异步队列、幂等、取消和人工审批。
 - 关键条件覆盖率是可配置启发式规则，需要用真实业务评测集持续校准。
 
-[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.1.0...v1.2.0

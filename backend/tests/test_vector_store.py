@@ -125,6 +125,43 @@ def test_pgvector_can_fail_closed_to_bm25(monkeypatch):
     assert hits[0].vector_score == 0
 
 
+def test_pgvector_query_receives_live_allowed_document_ids(monkeypatch):
+    allowed_chunk_id = insert_vector_chunk("allowed policy", [1.0, 0.0])
+    with get_conn() as conn:
+        allowed_document_id = int(
+            conn.execute("SELECT document_id FROM chunks WHERE id = ?", (allowed_chunk_id,)).fetchone()[0]
+        )
+        restricted_document_id = conn.execute(
+            """
+            INSERT INTO documents(
+                title, filename, file_type, storage_path, access_level,
+                status, chunk_count, version, created_at
+            )
+            VALUES ('restricted', 'restricted.md', 'md', 'test', 'sensitive', 'ready', 0, 1, ?)
+            """,
+            (utc_now(),),
+        ).lastrowid
+    captured = {}
+    monkeypatch.setenv("RAG_VECTOR_STORE", "pgvector")
+    monkeypatch.setattr(search, "embed_query", lambda _text, _model: [1.0, 0.0])
+
+    def fake_query(_embedding, _model, document_ids, _limit):
+        captured["document_ids"] = document_ids
+        return VectorStoreResult(
+            backend="pgvector",
+            status="ready",
+            scores={allowed_chunk_id: 1.0},
+        )
+
+    monkeypatch.setattr(search, "query_chunk_vectors", fake_query)
+
+    hits = search.search_chunks("semantic wording", 5, ["internal"])
+
+    assert hits[0].chunk_id == allowed_chunk_id
+    assert captured["document_ids"] == [allowed_document_id]
+    assert int(restricted_document_id) not in captured["document_ids"]
+
+
 def test_admin_can_reconcile_existing_sqlite_vectors_without_provider_call(client, admin_headers, monkeypatch):
     chunk_id = insert_vector_chunk("existing vector", [0.25, 0.75])
     calls = {"deleted": [], "synced": []}

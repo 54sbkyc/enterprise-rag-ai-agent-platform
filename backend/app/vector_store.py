@@ -128,10 +128,10 @@ def sync_chunk_vectors(items: list[ChunkVector]) -> VectorStoreResult:
 def query_chunk_vectors(
     query_embedding: list[float],
     embedding_model: str,
-    allowed_chunk_ids: list[int],
+    allowed_document_ids: list[int],
     limit: int,
 ) -> VectorStoreResult:
-    if not allowed_chunk_ids or not query_embedding:
+    if not allowed_document_ids or not query_embedding:
         return VectorStoreResult(backend="pgvector", status="ready")
     try:
         from pgvector import Vector
@@ -148,11 +148,11 @@ def query_chunk_vectors(
                 """
                 SELECT chunk_id, 1 - (embedding <=> %s) AS similarity
                 FROM rag_chunk_embeddings
-                WHERE embedding_model = %s AND chunk_id = ANY(%s)
+                WHERE embedding_model = %s AND document_id = ANY(%s)
                 ORDER BY embedding <=> %s
                 LIMIT %s
                 """,
-                (query_vector, embedding_model, allowed_chunk_ids, query_vector, max(1, limit)),
+                (query_vector, embedding_model, allowed_document_ids, query_vector, max(1, limit)),
             ).fetchall()
         scores = {
             int(row[0]): max(0.0, min(1.0, float(row[1])))

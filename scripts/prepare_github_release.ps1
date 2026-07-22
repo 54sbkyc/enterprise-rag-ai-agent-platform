@@ -27,6 +27,7 @@ $RequiredPaths = @(
     "backend/app/agent.py",
     "backend/app/agent_planner.py",
     "backend/app/embeddings.py",
+    "backend/app/lexical_index.py",
     "backend/app/vector_store.py",
     "backend/app/evaluation_dataset.py",
     "backend/app/evaluation_gate.py",
@@ -51,6 +52,7 @@ $RequiredPaths = @(
     "docs/production_roadmap.md",
     "docs/container_deployment.md",
     "docs/pgvector_retrieval.md",
+    "docs/fts5_retrieval.md",
     "docs/rag_quality_gate.md",
     "docs/final_acceptance_report.md",
     "docs/github_release_checklist.md",
@@ -64,7 +66,8 @@ $RequiredPaths = @(
     "docs/releases/v1.1.0.md",
     "docs/releases/v1.2.0.md",
     "docs/releases/v1.3.0.md",
-    "docs/releases/v1.4.0.md"
+    "docs/releases/v1.4.0.md",
+    "docs/releases/v1.5.0.md"
 )
 
 $BlockedPaths = @(
@@ -146,6 +149,7 @@ $MarkdownFilesToValidate = @(
     "docs/production_roadmap.md",
     "docs/container_deployment.md",
     "docs/pgvector_retrieval.md",
+    "docs/fts5_retrieval.md",
     "docs/rag_quality_gate.md",
     "docs/interview_talking_points.md",
     "docs/interview_demo_checklist.md",
@@ -155,7 +159,8 @@ $MarkdownFilesToValidate = @(
     "docs/releases/v1.1.0.md",
     "docs/releases/v1.2.0.md",
     "docs/releases/v1.3.0.md",
-    "docs/releases/v1.4.0.md"
+    "docs/releases/v1.4.0.md",
+    "docs/releases/v1.5.0.md"
 )
 
 $PublicPatternsToScanForSecrets = @(

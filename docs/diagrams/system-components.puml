@@ -27,7 +27,7 @@ package "FastAPI 服务层" {
   component "认证与 RBAC" as Auth
   component "文档管理服务" as Document
   component "问答编排服务" as QA
-  component "混合检索服务\nBM25 / Vector / Rerank" as Retrieval
+  component "混合检索服务\nFTS5 / BM25 / Vector / Rerank" as Retrieval
   component "质量评测服务" as Evaluation
   component "知识缺口服务" as Gap
   component "审计与统计服务" as Audit
@@ -35,6 +35,7 @@ package "FastAPI 服务层" {
 
 package "数据与文件层" {
   database "SQLite 数据库" as SQLite
+  component "SQLite FTS5\n关键词候选索引" as FTS
   database "可选 PostgreSQL\npgvector HNSW" as Pgvector
   folder "上传文档目录" as Uploads
 }
@@ -56,10 +57,12 @@ Gap --> QA : 无日志复评
 
 Auth --> SQLite
 Document --> SQLite
+Document --> FTS : 触发器自动同步
 Document ..> Pgvector : 向量投影 / 对账
 Document --> Uploads
 Retrieval --> SQLite
-Retrieval ..> Pgvector : 允许片段 HNSW Top-K
+Retrieval --> FTS : 有界关键词候选
+Retrieval ..> Pgvector : 允许文档 HNSW Top-K
 QA --> SQLite
 Evaluation --> SQLite
 Gap --> SQLite
