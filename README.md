@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/54sbkyc/enterprise-rag-ai-agent-platform)](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases)
 [![License](https://img.shields.io/github/license/54sbkyc/enterprise-rag-ai-agent-platform)](LICENSE)
 
-一个面向 AI 应用开发岗位的 Python 全栈项目。当前数据库演进版本为 `v1.7.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志、AI 调用可观测和版本化 Schema 迁移。
+一个面向 AI 应用开发岗位的 Python 全栈项目。当前发布版本为 `v1.8.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、分层质量评测、安全拦截、审计日志、AI 调用可观测和版本化 Schema 迁移。
 
 这个项目不是单纯的聊天页面，而是一个可以向面试官展示工程闭环的 AI 应用：能回答、能追溯、能评测、能治理、能看到成本和运行过程。
 
@@ -23,6 +23,7 @@
 | [数据库迁移运维](docs/database_migrations.md) | 查看 Schema 版本、事务升级、漂移检测、备份恢复和运维命令。 |
 | [生产化路线图](docs/production_roadmap.md) | 说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent 和 ACL 升级路径。 |
 | [最终验收报告](docs/final_acceptance_report.md) | 说明发布前验收、工程完整度和诚实边界。 |
+| [v1.8.0 版本说明](docs/releases/v1.8.0.md) | 查看 50 条真实基准、严格事实断言、引用忠实度、安全断言和执行证据。 |
 | [v1.7.0 版本说明](docs/releases/v1.7.0.md) | 查看旧库兼容升级、迁移校验、并发幂等和事务回滚证据。 |
 | [v1.6.0 版本说明](docs/releases/v1.6.0.md) | 查看共享模型网关、选择性重试、熔断、调用诊断和故障注入证据。 |
 | [v1.5.0 版本说明](docs/releases/v1.5.0.md) | 查看 FTS5 有界关键词候选、文档级 pgvector ACL、规模回归和完整 CI 证据。 |
@@ -52,7 +53,7 @@
 | AI Agent 工程 | 受控模型规划、工具白名单、进程内异步任务、幂等提交、取消重试和调用轨迹 |
 | 模型调用韧性 | 问答、Embedding、Agent Planner 共用有界重试、指数退避、`Retry-After`、熔断和错误分类 |
 | 可观测性 | 每次问答返回决策轨迹、真实调用次数与延迟、token 和成本；首页汇总 AI 运营指标 |
-| 质量评测 | 12 条角色化黄金用例，支持 Recall@K、MRR、答案正确率、拒答准确率、访问控制准确率和报告导出 |
+| 质量评测 | 50 条分层角色化黄金用例，支持 Recall@K、MRR、答案完整度、引用忠实度、安全断言、模型与成本证据和报告导出 |
 | 回归门禁 | 版本化黄金集、SHA-256 指纹、批准/历史基线、阈值判定和 CI 失败退出码 |
 | 企业安全 | 角色权限、文档密级过滤、受限主题保守拒答、Prompt 注入拦截、敏感信息脱敏、审计日志 |
 | 可复现部署 | 非 root Docker 镜像、只读根文件系统、强密码引导、持久卷、数据库就绪检查和容器 CI 烟测 |
@@ -73,7 +74,7 @@
 - AI 可观测：问答页展示安全检查、权限范围、检索、生成等轨迹，以及供应商尝试次数、延迟、HTTP 状态、token 和成本估算。
 - 运行降级透明：区分大模型生成、本地抽取和模型失败后的本地降级，优先使用供应商返回的 Token 用量。
 - 首页运营指标：汇总 token、成本、Agent 运行次数、工具调用次数和最近 Agent 运行。
-- 质量治理：使用只读角色化黄金数据集执行召回、排序、答案、拒答和访问控制评测，记录绝对阈值、批准/历史基线变化；问答反馈、知识缺口和健康体检形成后续治理闭环。
+- 质量治理：使用 50 条只读角色化黄金数据集执行召回、排序、严格事实、拒答、访问控制、引用忠实和安全断言评测，按难度、分类和能力分层统计，并记录模型、Prompt、Token、成本、耗时及批准/历史基线变化。
 - 安全审计：记录问答日志、拦截原因、管理操作、文档变更和评测结果。
 - 运行时加固：会话默认 12 小时过期，上传默认限制 10 MB，跨域默认关闭且拒绝通配来源。
 - Schema 迁移：启动时按顺序应用不可变迁移，记录版本、校验值、时间与耗时；校验漂移、未来版本或失败升级会阻止服务就绪。
@@ -200,7 +201,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/health/ready
 
 可参考 `.env.example` 查看支持的环境变量。
 
-运行安全配置包括 `RAG_SESSION_TTL_HOURS`、`RAG_MAX_UPLOAD_MB`、`RAG_MIN_EVIDENCE_COVERAGE` 和 `RAG_CORS_ORIGINS`。`RAG_MIN_EVIDENCE_COVERAGE` 默认是 `0.7`，用于控制问题关键条件的最低依据覆盖率。前端与 API 同源部署时无需开启 CORS；确需跨域时应填写逗号分隔的明确来源，不能使用 `*`。
+运行安全配置包括 `RAG_SESSION_TTL_HOURS`、`RAG_MAX_UPLOAD_MB`、`RAG_MIN_EVIDENCE_COVERAGE` 和 `RAG_CORS_ORIGINS`。`RAG_MIN_EVIDENCE_COVERAGE` 默认是 `0.5`，短问题会自动提升到 `0.7`；问题中的年份和数字还必须出现在证据中。前端与 API 同源部署时无需开启 CORS；确需跨域时应填写逗号分隔的明确来源，不能使用 `*`。
 
 如需接入 OpenAI 兼容接口：
 
@@ -233,7 +234,7 @@ cd backend
 python -m app.eval_gate_cli --output ..\.runtime\evaluation-gate-report.json
 ```
 
-内置 `enterprise-rag-golden-v2` 包含 12 条按管理员、技术员工和普通员工执行的用例；批准基线的 Recall@K、MRR、答案正确率、拒答准确率和访问控制准确率均为 `100%`。CI 会校验黄金集指纹并阻止单项回退超过 5 个百分点；门禁规则、基线更新和生产边界见 [docs/rag_quality_gate.md](docs/rag_quality_gate.md)。
+内置 `enterprise-rag-golden-v3` 包含 50 条按管理员、技术员工和普通员工执行的用例，其中 42 条可回答、8 条拒答。批准基线 Recall@K 为 `100%`、MRR 为 `0.9544`，答案、拒答、访问控制、引用忠实和安全断言准确率均为 `100%`。CI 会校验黄金集指纹并阻止单项回退超过 5 个百分点；门禁规则、基线更新、基准快照和生产边界见 [docs/rag_quality_gate.md](docs/rag_quality_gate.md)。
 
 ## 发布前检查
 

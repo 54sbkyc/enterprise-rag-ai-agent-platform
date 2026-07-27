@@ -58,15 +58,33 @@ def test_versioned_golden_dataset_is_valid_and_stable():
     dataset = load_evaluation_dataset()
     baseline = load_evaluation_baseline()
 
-    assert dataset["version"] == "enterprise-rag-golden-v2"
-    assert len(dataset["cases"]) == 12
+    assert dataset["version"] == "enterprise-rag-golden-v3"
+    assert len(dataset["cases"]) == 50
     assert len(dataset["fingerprint"]) == 64
-    assert len({item["key"] for item in dataset["cases"]}) == 12
+    assert len({item["key"] for item in dataset["cases"]}) == 50
     assert {item["actor_role"] for item in dataset["cases"]} == {"admin", "tech", "employee"}
     assert baseline["dataset_version"] == dataset["version"]
     assert baseline["dataset_fingerprint"] == dataset["fingerprint"]
     assert baseline["top_k"] == 5
-    assert set(baseline["metrics"].values()) == {1.0}
+    assert {item["difficulty"] for item in dataset["cases"]} == {"easy", "medium", "hard"}
+    assert all(item["capabilities"] for item in dataset["cases"])
+    assert sum(1 for item in dataset["cases"] if item["should_answer"]) == 42
+    assert sum(1 for item in dataset["cases"] if not item["should_answer"]) == 8
+    assert all(
+        item["required_keyword_groups"] and item["expected_document_groups"]
+        for item in dataset["cases"]
+        if item["should_answer"]
+    )
+    assert baseline["metrics"]["mrr"] == 0.9544
+    assert set(baseline["metrics"]) == {
+        "recall_at_k",
+        "mrr",
+        "answer_accuracy",
+        "abstention_accuracy",
+        "access_control_accuracy",
+        "citation_faithfulness",
+        "safety_assertion_accuracy",
+    }
 
 
 def test_quality_gate_reports_threshold_and_regression_failures():
@@ -77,6 +95,8 @@ def test_quality_gate_reports_threshold_and_regression_failures():
         "answer_accuracy": 0.75,
         "abstention_accuracy": 1.0,
         "access_control_accuracy": 1.0,
+        "citation_faithfulness": 1.0,
+        "safety_assertion_accuracy": 1.0,
     }
     baseline = {
         "id": 11,
@@ -85,6 +105,8 @@ def test_quality_gate_reports_threshold_and_regression_failures():
         "answer_accuracy": 0.90,
         "abstention_accuracy": 1.0,
         "access_control_accuracy": 1.0,
+        "citation_faithfulness": 1.0,
+        "safety_assertion_accuracy": 1.0,
     }
 
     gate = evaluate_quality_gate(summary, QualityGatePolicy(), baseline)
@@ -174,9 +196,10 @@ def test_golden_cases_are_read_only_but_custom_cases_remain_editable(client, adm
     assert updated.json()["question"] == "自定义测试问题 V2"
     assert updated.json()["actor_role"] == "tech"
     assert golden_gate.status_code == 200
-    assert golden_gate.json()["summary"]["total"] == 12
+    assert golden_gate.json()["summary"]["total"] == 50
     assert golden_gate.json()["summary"]["access_control_accuracy"] == 1.0
-    assert golden_gate.json()["gate"]["baseline_reference"] == "enterprise-rag-approved-baseline-v2"
+    assert "citation_faithfulness" in golden_gate.json()["summary"]
+    assert "safety_assertion_accuracy" in golden_gate.json()["summary"]
 
 
 def test_ci_runs_and_uploads_the_quality_gate_report():
@@ -187,6 +210,23 @@ def test_ci_runs_and_uploads_the_quality_gate_report():
     assert "python -m app.eval_gate_cli" in workflow
     assert "rag-quality-gate-report" in workflow
     assert "actions/upload-artifact@v7" in workflow
+
+
+def test_approved_benchmark_matches_the_golden_dataset():
+    root = Path(__file__).resolve().parents[2]
+    benchmark = json.loads(
+        (root / "backend" / "evaluation" / "approved_benchmark.v3.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    dataset = load_evaluation_dataset()
+
+    assert benchmark["dataset"]["fingerprint"] == dataset["fingerprint"]
+    assert benchmark["dataset"]["case_count"] == len(dataset["cases"])
+    assert benchmark["quality"]["mrr"] == 0.9544
+    assert benchmark["execution"]["prompt_versions"] == ["grounded-answer-v1"]
+    assert benchmark["execution"]["total_tokens"] > 0
+    assert benchmark["execution"]["avg_latency_ms"] > 0
 
 
 def test_latest_quality_gate_has_a_single_frontend_render_owner():

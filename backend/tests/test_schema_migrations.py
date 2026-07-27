@@ -37,14 +37,24 @@ def test_fresh_database_reaches_versioned_schema():
         status = apply_migrations(conn)
 
         assert status.ready is True
-        assert status.current_version == status.expected_version == 1
-        assert status.applied_count == 1
-        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+        assert status.current_version == status.expected_version == 2
+        assert status.applied_count == 2
+        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 2
         assert conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_runs'"
         ).fetchone()
         columns = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
         assert {"access_level", "version", "embedding_status"} <= columns
+        evaluation_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(batch_eval_results)")
+        }
+        assert {
+            "citation_faithfulness",
+            "safety_assertion_correct",
+            "prompt_version",
+            "total_tokens",
+            "latency_ms",
+        } <= evaluation_columns
         checksum = conn.execute("SELECT checksum FROM schema_migrations").fetchone()[0]
         assert len(checksum) == 64
 
@@ -77,12 +87,12 @@ def test_legacy_database_is_upgraded_without_losing_rows():
         assert row == ("Legacy handbook", "internal", 1, "not_configured")
         assert first.ready is True
         assert second.ready is True
-        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 2
 
 
 def test_checksum_drift_is_reported_and_blocks_startup():
     with connect() as conn:
-        apply_migrations(conn)
+        apply_migrations(conn, migrations=(MIGRATIONS[0],))
         conn.execute(
             "UPDATE schema_migrations SET checksum = ? WHERE version = 1",
             ("0" * 64,),
@@ -99,7 +109,7 @@ def test_checksum_drift_is_reported_and_blocks_startup():
 
 def test_failed_migration_rolls_back_schema_data_and_history():
     with connect() as conn:
-        apply_migrations(conn)
+        apply_migrations(conn, migrations=(MIGRATIONS[0],))
         migrations = (
             MIGRATIONS[0],
             Migration(version=2, name="failing_probe", filename="0002_failing_probe.sql"),
@@ -146,7 +156,7 @@ def test_concurrent_upgrades_apply_each_version_once(tmp_path):
 
     with connect(database) as conn:
         assert results == ["ready", "ready"]
-        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 2
 
 
 def test_migration_cli_reports_machine_readable_history(capsys):
@@ -155,7 +165,7 @@ def test_migration_cli_reports_machine_readable_history(capsys):
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert payload["status"] == "ready"
-    assert payload["current_version"] == payload["expected_version"] == 1
+    assert payload["current_version"] == payload["expected_version"] == 2
     assert payload["history"][0]["name"] == "legacy_schema_baseline"
 
 
@@ -171,4 +181,4 @@ def test_migration_cli_creates_integrity_checked_online_backup(tmp_path, capsys)
     assert payload["status"] == "backup_created"
     assert payload["integrity_check"] == "ok"
     with connect(str(destination)) as backup:
-        assert backup.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+        assert backup.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 2

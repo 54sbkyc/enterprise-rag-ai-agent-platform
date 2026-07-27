@@ -15,7 +15,7 @@ from app.db import get_conn
 
 
 def test_release_version_and_secure_runtime_defaults():
-    assert APP_VERSION == "1.7.0"
+    assert APP_VERSION == "1.8.0"
     assert MAX_UPLOAD_BYTES == 10 * 1024 * 1024
     assert SESSION_TTL_HOURS == 12
     assert parse_cors_origins("") == ()

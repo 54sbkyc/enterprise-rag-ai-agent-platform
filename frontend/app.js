@@ -108,6 +108,8 @@ const evaluationMetricLabels = {
   answer_accuracy: "答案正确率",
   abstention_accuracy: "拒答准确率",
   access_control_accuracy: "访问控制准确率",
+  citation_faithfulness: "引用忠实度",
+  safety_assertion_accuracy: "安全断言准确率",
 };
 
 const REMEMBER_LOGIN_KEY = "enterprise_kb_remember_login";
@@ -1347,6 +1349,10 @@ function renderLatestQualityGate(latest) {
     <span>答案正确率：${percentText(latest.answer_accuracy)}</span>
     <span>拒答准确率：${percentText(latest.abstention_accuracy)}</span>
     <span>访问控制准确率：${percentText(latest.access_control_accuracy)}</span>
+    <span>引用忠实度：${percentText(latest.citation_faithfulness)}</span>
+    <span>安全断言：${percentText(latest.safety_assertion_accuracy)}</span>
+    <span>模型：${escapeHtml((latest.models || []).join(" / ") || "未知")} · Prompt：${escapeHtml((latest.prompt_versions || []).join(" / ") || "未知")}</span>
+    <span>Token：${Number(latest.total_tokens || 0).toLocaleString()} · 成本 $${Number(latest.estimated_cost_usd || 0).toFixed(6)} · 平均 ${Number(latest.avg_latency_ms || 0).toFixed(2)} ms</span>
     ${failed.length ? `<span class="gate-failure">未通过：${escapeHtml(failed.join("、"))}</span>` : ""}
   `;
 }
@@ -1372,7 +1378,8 @@ function renderBatchRuns() {
             <span class="badge ${gatePassed ? "" : "danger"}">${gatePassed ? "通过" : "失败"}</span>
           </div>
           <span>${escapeHtml(run.dataset_version)} · ${escapeHtml(run.dataset_hash.slice(0, 12))} · Top ${run.top_k} · ${escapeHtml(run.baseline_reference || (run.baseline_run_id ? `历史运行 #${run.baseline_run_id}` : "无兼容基线"))}</span>
-          <span>${run.total} 条 · Recall@K ${percentText(run.recall_at_k)} · MRR ${Number(run.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(run.answer_accuracy)} · 拒答准确率 ${percentText(run.abstention_accuracy)} · 访问控制 ${percentText(run.access_control_accuracy)} · ${formatDate(run.created_at)}</span>
+          <span>${run.total} 条 · Recall@K ${percentText(run.recall_at_k)} · MRR ${Number(run.mrr || 0).toFixed(3)} · 答案 ${percentText(run.answer_accuracy)} · 拒答 ${percentText(run.abstention_accuracy)} · 引用忠实 ${percentText(run.citation_faithfulness)} · 安全断言 ${percentText(run.safety_assertion_accuracy)} · ${formatDate(run.created_at)}</span>
+          <span>${escapeHtml((run.models || []).join(" / ") || "未知模型")} · ${escapeHtml((run.prompt_versions || []).join(" / ") || "未知 Prompt")} · ${Number(run.total_tokens || 0).toLocaleString()} Token · ${Number(run.avg_latency_ms || 0).toFixed(2)} ms</span>
           ${deltas ? `<span>相对基线：${escapeHtml(deltas)}</span>` : ""}
           <div class="compact-actions">
             <button class="ghost-btn small-btn" data-export-md="${run.id}">导出 Markdown</button>
@@ -2271,7 +2278,7 @@ async function runBatchEvaluation() {
     });
     setText(
       "#evalResult",
-      `${result.gate.status === "passed" ? "门禁通过" : `门禁失败：${result.gate.failed_metrics.map((metric) => evaluationMetricLabels[metric] || metric).join("、")}`} · ${result.summary.total} 条 · Recall@K ${percentText(result.summary.recall_at_k)} · MRR ${Number(result.summary.mrr || 0).toFixed(3)} · 答案正确率 ${percentText(result.summary.answer_accuracy)} · 拒答准确率 ${percentText(result.summary.abstention_accuracy)} · 访问控制 ${percentText(result.summary.access_control_accuracy)}`,
+      `${result.gate.status === "passed" ? "门禁通过" : `门禁失败：${result.gate.failed_metrics.map((metric) => evaluationMetricLabels[metric] || metric).join("、")}`} · ${result.summary.total} 条 · Recall@K ${percentText(result.summary.recall_at_k)} · MRR ${Number(result.summary.mrr || 0).toFixed(3)} · 答案 ${percentText(result.summary.answer_accuracy)} · 拒答 ${percentText(result.summary.abstention_accuracy)} · 引用忠实 ${percentText(result.summary.citation_faithfulness)} · 安全断言 ${percentText(result.summary.safety_assertion_accuracy)} · ${Number(result.benchmark.total_tokens || 0).toLocaleString()} Token · ${Number(result.benchmark.avg_latency_ms || 0).toFixed(2)} ms`,
     );
     await refreshEvaluationPage();
     await loadLogs();

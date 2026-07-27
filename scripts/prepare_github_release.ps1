@@ -38,8 +38,12 @@ $RequiredPaths = @(
     "backend/app/migrations.py",
     "backend/app/migration_cli.py",
     "backend/app/migrations/0001_legacy_baseline.sql",
+    "backend/app/migrations/0002_realistic_rag_benchmark.sql",
     "backend/evaluation/golden_cases.v2.json",
     "backend/evaluation/approved_baseline.v2.json",
+    "backend/evaluation/golden_cases.v3.json",
+    "backend/evaluation/approved_baseline.v3.json",
+    "backend/evaluation/approved_benchmark.v3.json",
     "backend/requirements.txt",
     "backend/requirements-runtime.txt",
     "backend/check_requirements.py",
@@ -75,7 +79,8 @@ $RequiredPaths = @(
     "docs/releases/v1.4.0.md",
     "docs/releases/v1.5.0.md",
     "docs/releases/v1.6.0.md",
-    "docs/releases/v1.7.0.md"
+    "docs/releases/v1.7.0.md",
+    "docs/releases/v1.8.0.md"
 )
 
 $BlockedPaths = @(
@@ -172,7 +177,8 @@ $MarkdownFilesToValidate = @(
     "docs/releases/v1.4.0.md",
     "docs/releases/v1.5.0.md",
     "docs/releases/v1.6.0.md",
-    "docs/releases/v1.7.0.md"
+    "docs/releases/v1.7.0.md",
+    "docs/releases/v1.8.0.md"
 )
 
 $PublicPatternsToScanForSecrets = @(

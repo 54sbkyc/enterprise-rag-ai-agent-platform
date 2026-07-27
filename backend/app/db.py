@@ -98,18 +98,28 @@ def _seed_evaluation_cases(conn: sqlite3.Connection) -> None:
             conn.execute(
                 """
                 UPDATE evaluation_cases
-                SET case_key = ?, dataset_version = ?, category = ?, actor_role = ?, question = ?,
-                    expected_keywords = ?, expected_documents = ?, should_answer = ?, updated_at = ?
+                SET case_key = ?, dataset_version = ?, category = ?, difficulty = ?,
+                    capabilities_json = ?, actor_role = ?, question = ?, expected_keywords = ?,
+                    required_keyword_groups_json = ?, forbidden_keywords_json = ?,
+                    expected_documents = ?, expected_document_groups_json = ?,
+                    forbidden_documents_json = ?, min_citations = ?, should_answer = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     case["key"],
                     dataset["version"],
                     case["category"],
+                    case["difficulty"],
+                    json.dumps(case["capabilities"], ensure_ascii=False),
                     case["actor_role"],
                     case["question"],
                     json.dumps(case["expected_keywords"], ensure_ascii=False),
+                    json.dumps(case["required_keyword_groups"], ensure_ascii=False),
+                    json.dumps(case["forbidden_keywords"], ensure_ascii=False),
                     json.dumps(case["expected_documents"], ensure_ascii=False),
+                    json.dumps(case["expected_document_groups"], ensure_ascii=False),
+                    json.dumps(case["forbidden_documents"], ensure_ascii=False),
+                    case["min_citations"],
                     1 if case["should_answer"] else 0,
                     utc_now(),
                     existing["id"],
@@ -119,21 +129,40 @@ def _seed_evaluation_cases(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             INSERT INTO evaluation_cases(
-                case_key, dataset_version, category, actor_role, question,
-                expected_keywords, expected_documents, should_answer, created_at, updated_at
+                case_key, dataset_version, category, difficulty, capabilities_json,
+                actor_role, question, expected_keywords, required_keyword_groups_json,
+                forbidden_keywords_json, expected_documents, expected_document_groups_json,
+                forbidden_documents_json, min_citations, should_answer, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 case["key"],
                 dataset["version"],
                 case["category"],
+                case["difficulty"],
+                json.dumps(case["capabilities"], ensure_ascii=False),
                 case["actor_role"],
                 case["question"],
                 json.dumps(case["expected_keywords"], ensure_ascii=False),
+                json.dumps(case["required_keyword_groups"], ensure_ascii=False),
+                json.dumps(case["forbidden_keywords"], ensure_ascii=False),
                 json.dumps(case["expected_documents"], ensure_ascii=False),
+                json.dumps(case["expected_document_groups"], ensure_ascii=False),
+                json.dumps(case["forbidden_documents"], ensure_ascii=False),
+                case["min_citations"],
                 1 if case["should_answer"] else 0,
                 utc_now(),
                 utc_now(),
             ),
         )
+
+    current_keys = [case["key"] for case in dataset["cases"]]
+    placeholders = ",".join("?" for _ in current_keys)
+    conn.execute(
+        f"""
+        DELETE FROM evaluation_cases
+        WHERE case_key IS NOT NULL AND case_key NOT IN ({placeholders})
+        """,
+        current_keys,
+    )

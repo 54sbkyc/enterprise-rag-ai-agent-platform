@@ -8,7 +8,8 @@ INJECTION_PATTERNS = [
     r"system prompt",
     r"developer message",
     r"越权|绕过权限|导出全部|输出全部文档",
-    r"泄露|密钥|密码|token|api[_ -]?key",
+    r"(输出|提供|告诉|显示|查看|导出|获取).{0,16}(密码|密钥|token|api[_ -]?key)",
+    r"(密码|密钥|token|api[_ -]?key).{0,16}(是什么|给我|输出|显示|导出)",
 ]
 
 SENSITIVE_PATTERNS = [

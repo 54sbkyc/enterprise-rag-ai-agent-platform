@@ -3,16 +3,30 @@ import json
 from pathlib import Path
 
 
-DEFAULT_DATASET_PATH = Path(__file__).resolve().parents[1] / "evaluation" / "golden_cases.v2.json"
-DEFAULT_BASELINE_PATH = Path(__file__).resolve().parents[1] / "evaluation" / "approved_baseline.v2.json"
+DEFAULT_DATASET_PATH = Path(__file__).resolve().parents[1] / "evaluation" / "golden_cases.v3.json"
+DEFAULT_BASELINE_PATH = Path(__file__).resolve().parents[1] / "evaluation" / "approved_baseline.v3.json"
 BASELINE_METRICS = (
     "recall_at_k",
     "mrr",
     "answer_accuracy",
     "abstention_accuracy",
     "access_control_accuracy",
+    "citation_faithfulness",
+    "safety_assertion_accuracy",
 )
 ALLOWED_ACTOR_ROLES = {"admin", "tech", "employee"}
+ALLOWED_DIFFICULTIES = {"easy", "medium", "hard"}
+ALLOWED_CAPABILITIES = {
+    "access_control",
+    "abstention",
+    "citation_grounding",
+    "conflict_resolution",
+    "exact_fact",
+    "multi_constraint",
+    "multi_document",
+    "paraphrase",
+    "prompt_injection",
+}
 
 
 class EvaluationDatasetError(ValueError):
@@ -46,15 +60,56 @@ def load_evaluation_dataset(path: Path | None = None) -> dict:
         actor_role = str(raw_case.get("actor_role", "admin")).strip().lower()
         if actor_role not in ALLOWED_ACTOR_ROLES:
             raise EvaluationDatasetError(f"第 {index} 个评测用例的 actor_role 无效：{actor_role}")
+        expected_keywords = _string_list(raw_case.get("expected_keywords"), index, "expected_keywords")
+        expected_documents = _string_list(raw_case.get("expected_documents"), index, "expected_documents")
+        should_answer = bool(raw_case.get("should_answer", True))
+        difficulty = str(raw_case.get("difficulty", "")).strip().lower()
+        if difficulty not in ALLOWED_DIFFICULTIES:
+            raise EvaluationDatasetError(f"第 {index} 个评测用例的 difficulty 无效：{difficulty}")
+        capabilities = _string_list(raw_case.get("capabilities"), index, "capabilities")
+        unknown_capabilities = set(capabilities) - ALLOWED_CAPABILITIES
+        if not capabilities or unknown_capabilities:
+            unknown = ", ".join(sorted(unknown_capabilities)) or "empty"
+            raise EvaluationDatasetError(f"第 {index} 个评测用例的 capabilities 无效：{unknown}")
+        required_groups = _string_groups(
+            raw_case.get("required_keyword_groups", [[item] for item in expected_keywords]),
+            index,
+            "required_keyword_groups",
+        )
+        document_groups = _string_groups(
+            raw_case.get("expected_document_groups", [[item] for item in expected_documents]),
+            index,
+            "expected_document_groups",
+        )
+        forbidden_keywords = _string_list(
+            raw_case.get("forbidden_keywords", []), index, "forbidden_keywords"
+        )
+        forbidden_documents = _string_list(
+            raw_case.get("forbidden_documents", []), index, "forbidden_documents"
+        )
+        min_citations = raw_case.get("min_citations", 1 if should_answer else 0)
+        if not isinstance(min_citations, int) or not 0 <= min_citations <= 10:
+            raise EvaluationDatasetError(f"第 {index} 个评测用例的 min_citations 必须在 0 到 10 之间")
+        if should_answer and (not required_groups or not document_groups or min_citations < 1):
+            raise EvaluationDatasetError(f"第 {index} 个可回答用例缺少事实、来源或最小引用断言")
+        if not should_answer and (required_groups or document_groups or min_citations):
+            raise EvaluationDatasetError(f"第 {index} 个拒答用例不能声明必答事实、来源或引用数量")
         normalized_cases.append(
             {
                 "key": case_key,
                 "category": str(raw_case.get("category", "general")).strip() or "general",
+                "difficulty": difficulty,
+                "capabilities": capabilities,
                 "actor_role": actor_role,
                 "question": question,
-                "expected_keywords": _string_list(raw_case.get("expected_keywords"), index, "expected_keywords"),
-                "expected_documents": _string_list(raw_case.get("expected_documents"), index, "expected_documents"),
-                "should_answer": bool(raw_case.get("should_answer", True)),
+                "expected_keywords": expected_keywords,
+                "required_keyword_groups": required_groups,
+                "forbidden_keywords": forbidden_keywords,
+                "expected_documents": expected_documents,
+                "expected_document_groups": document_groups,
+                "forbidden_documents": forbidden_documents,
+                "min_citations": min_citations,
+                "should_answer": should_answer,
             }
         )
 
@@ -84,7 +139,7 @@ def load_evaluation_baseline(path: Path | None = None) -> dict:
     if not isinstance(top_k, int) or not 1 <= top_k <= 10:
         raise EvaluationDatasetError("批准基线的 top_k 必须在 1 到 10 之间")
     if not isinstance(raw_metrics, dict) or set(raw_metrics) != set(BASELINE_METRICS):
-        raise EvaluationDatasetError("批准基线必须包含完整的五项门禁指标")
+        raise EvaluationDatasetError("批准基线必须包含完整的七项门禁指标")
     metrics = {}
     for metric in BASELINE_METRICS:
         try:
@@ -122,10 +177,17 @@ def cases_fingerprint(cases: list[dict]) -> str:
         {
             "key": str(item.get("case_key") or f"custom-{item.get('id', index)}"),
             "category": str(item.get("category") or "general"),
+            "difficulty": str(item.get("difficulty") or "custom"),
+            "capabilities": list(item.get("capabilities") or []),
             "actor_role": str(item.get("actor_role") or "admin"),
             "question": str(item["question"]),
             "expected_keywords": list(item.get("expected_keywords") or []),
+            "required_keyword_groups": list(item.get("required_keyword_groups") or []),
+            "forbidden_keywords": list(item.get("forbidden_keywords") or []),
             "expected_documents": list(item.get("expected_documents") or []),
+            "expected_document_groups": list(item.get("expected_document_groups") or []),
+            "forbidden_documents": list(item.get("forbidden_documents") or []),
+            "min_citations": int(item.get("min_citations") or 0),
             "should_answer": bool(item.get("should_answer", True)),
         }
         for index, item in enumerate(cases, start=1)
@@ -139,6 +201,24 @@ def _string_list(value, case_index: int, field: str) -> list[str]:
     result = [str(item).strip().lower() for item in value if str(item).strip()]
     if len(result) != len(value):
         raise EvaluationDatasetError(f"第 {case_index} 个评测用例的 {field} 包含空值")
+    return result
+
+
+def _string_groups(value, case_index: int, field: str) -> list[list[str]]:
+    if not isinstance(value, list):
+        raise EvaluationDatasetError(f"第 {case_index} 个评测用例的 {field} 必须是二维数组")
+    result = []
+    for group_index, group in enumerate(value, start=1):
+        if not isinstance(group, list) or not group:
+            raise EvaluationDatasetError(
+                f"第 {case_index} 个评测用例的 {field}[{group_index}] 必须是非空数组"
+            )
+        normalized = [str(item).strip().lower() for item in group if str(item).strip()]
+        if len(normalized) != len(group):
+            raise EvaluationDatasetError(
+                f"第 {case_index} 个评测用例的 {field}[{group_index}] 包含空值"
+            )
+        result.append(list(dict.fromkeys(normalized)))
     return result
 
 

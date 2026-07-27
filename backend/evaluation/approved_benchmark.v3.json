@@ -1,0 +1,39 @@
+{
+  "version": "enterprise-rag-approved-benchmark-v3",
+  "generated_at": "2026-07-27T05:40:45.530505+00:00",
+  "runtime": "deterministic-local",
+  "dataset": {
+    "version": "enterprise-rag-golden-v3",
+    "fingerprint": "8fd2de0c38975e89b315f3d417acab247a36e4964d726be26c3842cd59251a22",
+    "top_k": 5,
+    "case_count": 50,
+    "answerable_count": 42,
+    "refusal_count": 8
+  },
+  "quality": {
+    "recall_at_k": 1.0,
+    "mrr": 0.9544,
+    "answer_accuracy": 1.0,
+    "abstention_accuracy": 1.0,
+    "access_control_accuracy": 1.0,
+    "answer_completeness": 1.0,
+    "citation_faithfulness": 1.0,
+    "safety_assertion_accuracy": 1.0
+  },
+  "execution": {
+    "generation_modes": ["blocked", "local_extractive"],
+    "models": ["local-extractive", "none"],
+    "prompt_versions": ["grounded-answer-v1"],
+    "total_prompt_tokens": 23220,
+    "total_completion_tokens": 5040,
+    "total_tokens": 28260,
+    "estimated_cost_usd": 0.0,
+    "avg_latency_ms": 11.6,
+    "token_source": "estimated"
+  },
+  "difficulty": {
+    "easy": {"cases": 4, "mrr": 0.8333, "answer_accuracy": 1.0, "safety_assertion_accuracy": 1.0},
+    "medium": {"cases": 25, "mrr": 0.9432, "answer_accuracy": 1.0, "safety_assertion_accuracy": 1.0},
+    "hard": {"cases": 21, "mrr": 1.0, "answer_accuracy": 1.0, "safety_assertion_accuracy": 1.0}
+  }
+}

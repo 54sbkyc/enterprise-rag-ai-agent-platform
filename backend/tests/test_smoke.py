@@ -16,7 +16,7 @@ def test_liveness_and_database_readiness_endpoints(client):
     assert ready_response.json()["database"] == "ok"
     schema = ready_response.json()["schema_migrations"]
     assert schema["status"] == "ready"
-    assert schema["current_version"] == schema["expected_version"] == 1
+    assert schema["current_version"] == schema["expected_version"] == 2
     assert schema["pending_versions"] == []
     assert ready_response.json()["lexical_index"] == {
         "backend": "sqlite_fts5",
