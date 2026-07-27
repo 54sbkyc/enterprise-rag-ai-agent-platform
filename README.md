@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/54sbkyc/enterprise-rag-ai-agent-platform)](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases)
 [![License](https://img.shields.io/github/license/54sbkyc/enterprise-rag-ai-agent-platform)](LICENSE)
 
-一个面向 AI 应用开发岗位的 Python 全栈项目。当前有界混合检索版本为 `v1.5.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志和 AI 调用可观测。
+一个面向 AI 应用开发岗位的 Python 全栈项目。当前模型韧性版本为 `v1.6.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志和 AI 调用可观测。
 
 这个项目不是单纯的聊天页面，而是一个可以向面试官展示工程闭环的 AI 应用：能回答、能追溯、能评测、能治理、能看到成本和运行过程。
 
@@ -19,8 +19,10 @@
 | [面试演示检查清单](docs/interview_demo_checklist.md) | 面试前一天和前五分钟的环境、主线与故障预案检查。 |
 | [Docker 安全部署](docs/container_deployment.md) | 使用非 root 容器、持久卷、就绪检查和生产管理员引导完成可复现部署。 |
 | [pgvector 检索后端](docs/pgvector_retrieval.md) | 启用真实 HNSW 向量检索、连接池、历史索引对账、透明降级和 CI 数据库验证。 |
+| [模型网关韧性](docs/model_gateway_resilience.md) | 查看模型超时、选择性重试、指数退避、熔断、错误分类和故障注入验证。 |
 | [生产化路线图](docs/production_roadmap.md) | 说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent 和 ACL 升级路径。 |
 | [最终验收报告](docs/final_acceptance_report.md) | 说明发布前验收、工程完整度和诚实边界。 |
+| [v1.6.0 版本说明](docs/releases/v1.6.0.md) | 查看共享模型网关、选择性重试、熔断、调用诊断和故障注入证据。 |
 | [v1.5.0 版本说明](docs/releases/v1.5.0.md) | 查看 FTS5 有界关键词候选、文档级 pgvector ACL、规模回归和完整 CI 证据。 |
 | [v1.4.0 版本说明](docs/releases/v1.4.0.md) | 查看 pgvector HNSW、连接池、权限候选过滤、索引对账和真实数据库 CI 结果。 |
 | [变更记录](CHANGELOG.md) | 按版本追踪公开仓库的重要变化。 |
@@ -46,7 +48,8 @@
 | --- | --- |
 | RAG 应用落地 | 文档解析、切分、FTS5 有界关键词候选、可选 SQLite/pgvector 向量后端、字段加权 BM25、融合重排、Top-K 引用回答 |
 | AI Agent 工程 | 受控模型规划、工具白名单、进程内异步任务、幂等提交、取消重试和调用轨迹 |
-| 可观测性 | 每次问答返回决策轨迹、token 估算、成本估算；首页汇总 AI 运营指标 |
+| 模型调用韧性 | 问答、Embedding、Agent Planner 共用有界重试、指数退避、`Retry-After`、熔断和错误分类 |
+| 可观测性 | 每次问答返回决策轨迹、真实调用次数与延迟、token 和成本；首页汇总 AI 运营指标 |
 | 质量评测 | 12 条角色化黄金用例，支持 Recall@K、MRR、答案正确率、拒答准确率、访问控制准确率和报告导出 |
 | 回归门禁 | 版本化黄金集、SHA-256 指纹、批准/历史基线、阈值判定和 CI 失败退出码 |
 | 企业安全 | 角色权限、文档密级过滤、受限主题保守拒答、Prompt 注入拦截、敏感信息脱敏、审计日志 |
@@ -62,8 +65,9 @@
 - 依据覆盖闸门：回答前检查问题关键条件是否出现在 Top-K 依据中，覆盖不足时保守拒答，并在决策轨迹中展示覆盖率和缺失词。
 - 权限控制：内置管理员、技术员工与普通员工角色，后端接口、检索范围和前端页面都按权限收敛；低权限用户命中受限文档主题时只返回通用拒答，不暴露标题或正文。
 - RAG 问答：基于可访问文档检索片段，返回有依据的回答和引用来源。
+- 模型网关：问答、Embedding 和 Agent Planner 统一执行有界超时、选择性重试、指数退避和进程内熔断；认证或参数错误不盲目重试，异常响应有大小上限。
 - Agent 工作台：异步提交任务并轮询持久化状态，支持幂等键、协作式取消、失败重试，同时展示每一步工具输入、耗时和输出。
-- AI 可观测：问答页展示安全检查、权限范围、检索、生成等轨迹，以及 token 和成本估算。
+- AI 可观测：问答页展示安全检查、权限范围、检索、生成等轨迹，以及供应商尝试次数、延迟、HTTP 状态、token 和成本估算。
 - 运行降级透明：区分大模型生成、本地抽取和模型失败后的本地降级，优先使用供应商返回的 Token 用量。
 - 首页运营指标：汇总 token、成本、Agent 运行次数、工具调用次数和最近 Agent 运行。
 - 质量治理：使用只读角色化黄金数据集执行召回、排序、答案、拒答和访问控制评测，记录绝对阈值、批准/历史基线变化；问答反馈、知识缺口和健康体检形成后续治理闭环。
@@ -96,6 +100,7 @@ flowchart LR
     API --> Agent["Agent 工具编排"]
     API --> Eval["评测与健康体检"]
     API --> Obs["AI 可观测"]
+    API --> Gateway["模型韧性网关"]
     API --> Audit["审计日志"]
     Docs --> DB["SQLite"]
     Search --> DB
@@ -103,8 +108,12 @@ flowchart LR
     Docs -. "可选向量同步" .-> PG["PostgreSQL + pgvector"]
     Search -. "可选 HNSW Top-K" .-> PG
     QA --> Search
+    QA -. "可选模型生成" .-> Gateway
     Agent --> Search
     Agent --> DB
+    Agent -. "可选模型规划" .-> Gateway
+    Docs -. "可选 Embedding" .-> Gateway
+    Gateway -. "OpenAI-compatible" .-> Provider["外部模型服务"]
     Eval --> QA
     Obs --> DB
     Audit --> DB
@@ -184,6 +193,8 @@ $env:LLM_MODEL="your_model_name"
 ```
 
 兼容 OpenAI Chat Completions 协议的其他服务也可以通过 `LLM_BASE_URL` 和 `LLM_MODEL` 切换。
+
+模型请求默认只重试超时、网络错误、429 和可恢复的 5xx；401/403 与其他请求错误不会盲目重试。问答失败后自动回退本地抽取，Agent Planner 回退确定性计划，连续失败会触发进程内熔断。所有超时、重试和熔断变量见 [.env.example](.env.example)，完整错误语义与排障方式见 [模型网关韧性说明](docs/model_gateway_resilience.md)。
 
 需要语义向量召回时，再显式配置 `EMBEDDING_MODEL` 和 `EMBEDDING_API_KEY`。未配置时系统使用 BM25，不会偷偷发起外部请求。历史文档可在“文档管理”中点击“重建向量索引”。
 

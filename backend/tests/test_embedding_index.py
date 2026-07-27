@@ -72,6 +72,12 @@ def test_document_upload_persists_embedding_index_status(client, admin_headers, 
     assert response.status_code == 200
     assert response.json()["embedding_status"] == "ready"
     assert response.json()["embedding_model"] == "demo-embedding"
+    assert response.json()["embedding_gateway"] == {
+        "attempts": 0,
+        "latency_ms": 0,
+        "status_code": None,
+        "error": None,
+    }
     assert response.json()["vector_store"]["status"] == "ready"
     with get_conn() as conn:
         document = conn.execute(

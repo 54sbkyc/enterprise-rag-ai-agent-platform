@@ -1,8 +1,8 @@
 import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
+
+from .provider_gateway import policy_from_env, post_json
 
 
 TOOL_SECURITY = "security_check"
@@ -22,6 +22,9 @@ class AgentPlan:
     steps: list[str]
     fallback_reason: str | None = None
     requested_model: str | None = None
+    provider_attempts: int = 0
+    provider_latency_ms: int = 0
+    provider_status_code: int | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -29,6 +32,9 @@ class AgentPlan:
             "steps": self.steps,
             "fallback_reason": self.fallback_reason,
             "requested_model": self.requested_model,
+            "provider_attempts": self.provider_attempts,
+            "provider_latency_ms": self.provider_latency_ms,
+            "provider_status_code": self.provider_status_code,
         }
 
 
@@ -47,9 +53,15 @@ def plan_agent(goal: str, *, can_manage_gaps: bool, can_view_audit: bool) -> Age
             requested_model=model or None,
         )
 
-    requested, error = _request_model_plan(goal, model, api_key, can_manage_gaps, can_view_audit)
+    requested, error, telemetry = _request_model_plan(goal, model, api_key, can_manage_gaps, can_view_audit)
     if error:
-        return AgentPlan("deterministic", fallback.steps, error, model)
+        return AgentPlan(
+            mode="deterministic",
+            steps=fallback.steps,
+            fallback_reason=error,
+            requested_model=model,
+            **telemetry,
+        )
     validated, validation_error = validate_tool_steps(
         requested,
         fallback.steps,
@@ -57,8 +69,14 @@ def plan_agent(goal: str, *, can_manage_gaps: bool, can_view_audit: bool) -> Age
         can_view_audit=can_view_audit,
     )
     if validation_error:
-        return AgentPlan("deterministic", validated, validation_error, model)
-    return AgentPlan("llm", validated, requested_model=model)
+        return AgentPlan(
+            mode="deterministic",
+            steps=validated,
+            fallback_reason=validation_error,
+            requested_model=model,
+            **telemetry,
+        )
+    return AgentPlan(mode="llm", steps=validated, requested_model=model, **telemetry)
 
 
 def deterministic_plan(goal: str) -> AgentPlan:
@@ -105,7 +123,7 @@ def _request_model_plan(
     api_key: str,
     can_manage_gaps: bool,
     can_view_audit: bool,
-) -> tuple[list[str], str | None]:
+) -> tuple[list[str], str | None, dict]:
     base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     payload = {
         "model": model,
@@ -130,31 +148,27 @@ def _request_model_plan(
         ],
         "temperature": 0,
     }
-    request = urllib.request.Request(
+    response = post_json(
         f"{base_url}/chat/completions",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        payload=payload,
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        method="POST",
+        policy=policy_from_env("AGENT_PLANNER", default_timeout_seconds=15, default_max_attempts=2),
     )
+    telemetry = {
+        "provider_attempts": response.attempts,
+        "provider_latency_ms": response.latency_ms,
+        "provider_status_code": response.status_code,
+    }
+    if not response.ready:
+        return [], response.error or "planner_unavailable", telemetry
     try:
-        with urllib.request.urlopen(request, timeout=_positive_int("AGENT_PLANNER_TIMEOUT_SECONDS", 15)) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        data = response.payload or {}
         content = str(data["choices"][0]["message"]["content"]).strip()
         if content.startswith("```"):
             content = content.strip("`")
             if content.startswith("json"):
                 content = content[4:].strip()
         tools = json.loads(content)["tools"]
-        return tools, None
-    except urllib.error.URLError:
-        return [], "planner_unavailable"
+        return tools, None, telemetry
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
-        return [], "invalid_planner_response"
-
-
-def _positive_int(name: str, default: int) -> int:
-    try:
-        value = int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
-    return value if value > 0 else default
+        return [], "invalid_planner_response", telemetry

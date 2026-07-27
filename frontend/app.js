@@ -1712,7 +1712,10 @@ function renderAgentResult(result) {
   const plan = result.plan || {};
   const plannerLabel = plan.mode === "llm" ? "模型规划" : plan.mode === "pending" || !plan.mode ? "等待规划" : "确定性规划";
   const fallback = plan.fallback_reason ? ` · 降级原因 ${plan.fallback_reason}` : "";
-  setText("#agentPlanSummary", `计划：${plannerLabel} · ${(plan.steps || []).join(" → ") || "未记录"}${fallback}`);
+  const provider = plan.requested_model
+    ? ` · 模型请求 ${plan.provider_attempts || 0} 次 · ${plan.provider_latency_ms || 0} ms`
+    : "";
+  setText("#agentPlanSummary", `计划：${plannerLabel} · ${(plan.steps || []).join(" → ") || "未记录"}${provider}${fallback}`);
   renderAgentToolTimeline(result.tool_calls || []);
 }
 
@@ -1832,6 +1835,13 @@ function renderQaUsage(usage) {
   ];
   if (usage.fallback_reason && usage.generation_mode === "local_fallback") {
     metrics.push(["降级原因", usage.fallback_reason]);
+  }
+  if (usage.requested_model) {
+    metrics.push(["模型请求", `${usage.provider_attempts || 0} 次`]);
+    metrics.push(["模型延迟", `${usage.provider_latency_ms || 0} ms`]);
+    if (usage.provider_status_code) {
+      metrics.push(["HTTP 状态", usage.provider_status_code]);
+    }
   }
   grid.innerHTML = metrics
     .map(

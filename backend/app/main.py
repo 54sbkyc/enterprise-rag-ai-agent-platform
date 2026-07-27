@@ -68,6 +68,7 @@ from .permissions import (
     require_permission,
     update_role_permissions,
 )
+from .provider_gateway import provider_gateway_health
 from .quality import calculate_quality
 from .qa import build_grounded_answer, build_restricted_access_refusal
 from .search import has_restricted_topic_match, search_chunks
@@ -275,6 +276,7 @@ def readiness() -> dict:
         "database": "ok",
         "lexical_index": lexical_health.public_dict(),
         "vector_store": vector_health.public_dict(),
+        "model_gateway": provider_gateway_health(),
     }
 
 
@@ -595,6 +597,7 @@ def upload_document(
             "filename": safe_name,
             "access_level": access_level,
             "chunk_count": len(chunks),
+            "embedding_gateway": chunk_index.provider_diagnostics(),
             "vector_store": vector_result.public_dict(),
         },
     )
@@ -606,6 +609,7 @@ def upload_document(
         "status": "ready",
         "embedding_status": chunk_index.status,
         "embedding_model": chunk_index.model,
+        "embedding_gateway": chunk_index.provider_diagnostics(),
         "vector_store": vector_result.public_dict(),
     }
 
@@ -690,6 +694,7 @@ def rebuild_document_embeddings(
                     "document_id": document["id"],
                     "status": chunk_index.status,
                     "error": chunk_index.error,
+                    "embedding_gateway": chunk_index.provider_diagnostics(),
                 }
             )
             continue
@@ -732,6 +737,7 @@ def rebuild_document_embeddings(
                 "document_id": document["id"],
                 "status": "ready",
                 "chunks": len(rows),
+                "embedding_gateway": chunk_index.provider_diagnostics(),
                 "vector_store": vector_result.public_dict(),
             }
         )
@@ -1101,6 +1107,7 @@ def reindex_document(document_id: int, user: dict = Depends(current_user)) -> di
         document_id,
         {
             "chunk_count": len(chunks),
+            "embedding_gateway": chunk_index.provider_diagnostics(),
             "vector_cleanup": cleanup_result.public_dict(),
             "vector_store": vector_result.public_dict(),
         },
@@ -1112,6 +1119,7 @@ def reindex_document(document_id: int, user: dict = Depends(current_user)) -> di
         "version": new_version,
         "embedding_status": chunk_index.status,
         "embedding_model": chunk_index.model,
+        "embedding_gateway": chunk_index.provider_diagnostics(),
         "vector_cleanup": cleanup_result.public_dict(),
         "vector_store": vector_result.public_dict(),
     }

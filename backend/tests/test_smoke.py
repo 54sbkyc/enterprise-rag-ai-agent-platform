@@ -23,6 +23,11 @@ def test_liveness_and_database_readiness_endpoints(client):
         "status": "ready",
         "count": 0,
     }
+    model_gateway = ready_response.json()["model_gateway"]
+    assert model_gateway["circuit_state"] == "closed"
+    assert model_gateway["open_circuits"] == 0
+    assert "requests" in model_gateway
+    assert "attempts" in model_gateway
 
 
 def test_readiness_returns_503_without_exposing_database_errors(client, monkeypatch):

@@ -34,6 +34,7 @@ $RequiredPaths = @(
     "backend/app/evaluation_metrics.py",
     "backend/app/eval_gate_cli.py",
     "backend/app/observability.py",
+    "backend/app/provider_gateway.py",
     "backend/evaluation/golden_cases.v2.json",
     "backend/evaluation/approved_baseline.v2.json",
     "backend/requirements.txt",
@@ -52,6 +53,7 @@ $RequiredPaths = @(
     "docs/production_roadmap.md",
     "docs/container_deployment.md",
     "docs/pgvector_retrieval.md",
+    "docs/model_gateway_resilience.md",
     "docs/fts5_retrieval.md",
     "docs/rag_quality_gate.md",
     "docs/final_acceptance_report.md",
@@ -67,7 +69,8 @@ $RequiredPaths = @(
     "docs/releases/v1.2.0.md",
     "docs/releases/v1.3.0.md",
     "docs/releases/v1.4.0.md",
-    "docs/releases/v1.5.0.md"
+    "docs/releases/v1.5.0.md",
+    "docs/releases/v1.6.0.md"
 )
 
 $BlockedPaths = @(
@@ -149,6 +152,7 @@ $MarkdownFilesToValidate = @(
     "docs/production_roadmap.md",
     "docs/container_deployment.md",
     "docs/pgvector_retrieval.md",
+    "docs/model_gateway_resilience.md",
     "docs/fts5_retrieval.md",
     "docs/rag_quality_gate.md",
     "docs/interview_talking_points.md",
@@ -160,7 +164,8 @@ $MarkdownFilesToValidate = @(
     "docs/releases/v1.2.0.md",
     "docs/releases/v1.3.0.md",
     "docs/releases/v1.4.0.md",
-    "docs/releases/v1.5.0.md"
+    "docs/releases/v1.5.0.md",
+    "docs/releases/v1.6.0.md"
 )
 
 $PublicPatternsToScanForSecrets = @(

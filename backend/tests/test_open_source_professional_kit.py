@@ -122,9 +122,9 @@ def test_public_release_notes_match_application_version():
     release_notes = release_path.read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert f"## [{APP_VERSION}] - 2026-07-22" in changelog
-    assert "152 项 pytest" in changelog
+    assert f"## [{APP_VERSION}] - 2026-07-27" in changelog
+    assert "161 项 pytest" in changelog
     assert release_notes.startswith(f"# v{APP_VERSION} - ")
-    assert "FTS5 Bounded Hybrid Retrieval Release" in release_notes
+    assert "Resilient Model Gateway Release" in release_notes
     assert f"docs/releases/v{APP_VERSION}.md" in readme
     assert "CHANGELOG.md" in readme
