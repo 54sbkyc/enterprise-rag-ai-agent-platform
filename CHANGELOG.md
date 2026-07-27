@@ -4,6 +4,32 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-27
+
+面向旧库安全升级、Schema 漂移检测和故障恢复的数据库演进版本。
+
+### Added
+
+- 新增连续版本 SQLite 迁移链和 `schema_migrations` 历史，记录 SHA-256 校验值、应用时间与耗时。
+- 新增迁移 `status`、一致性 `backup` 和 `upgrade` CLI，在线备份完成后执行完整性检查。
+- 新增全新库、旧库数据保留、漂移、未来版本、失败回滚、并发幂等和备份测试。
+
+### Changed
+
+- 使用逐版本事务迁移替代 `init_db()` 中 60 多个零散字段补丁，并用 `BEGIN IMMEDIATE` 串行化并发启动。
+- readiness 增加当前/期望 Schema 版本，迁移历史异常时阻止服务接收流量。
+
+### Validation
+
+- 170 项 pytest 自动化测试通过，2 项真实 pgvector PostgreSQL 测试由 CI 专用任务执行。
+- 12 条角色化黄金用例全部通过，Recall@K、MRR、答案、拒答与访问控制准确率均为 100%。
+- 真实 `v1.6.0` 运行数据库副本完成迁移，升级前后业务表行数保持一致。
+
+### Known Boundaries
+
+- 当前迁移器管理 SQLite 业务事实源，不管理可重建 pgvector 投影，也不替代 PostgreSQL Alembic 迁移。
+- 不提供高风险的通用自动降级；版本回退应恢复升级前已校验备份。
+
 ## [1.6.0] - 2026-07-27
 
 面向外部模型故障恢复、透明降级和调用诊断的模型韧性版本。
@@ -185,7 +211,8 @@
 - Agent 当前同步执行；生产环境仍需异步队列、幂等、取消和人工审批。
 - 关键条件覆盖率是可配置启发式规则，需要用真实业务评测集持续校准。
 
-[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.3.0...v1.4.0

@@ -5,7 +5,7 @@
 ## 面试前一天
 
 - 确认 [GitHub Actions](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml) 为绿色。
-- 确认 [v1.6.0 Release](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.6.0) 可以打开。
+- 确认 [v1.7.0 Release](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.7.0) 可以打开。
 - 本地运行 `git status -sb`，确保公开仓库工作区干净。
 - 运行 `\.\scripts\verify_project.ps1`，记录当前 pytest 通过数量。
 - 确认验证输出中的 RAG quality gate 为 `PASSED`，Actions 中可下载 JSON 报告。

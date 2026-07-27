@@ -41,6 +41,13 @@ python -m app.eval_gate_cli --output ..\.runtime\evaluation-gate-report.json
 
 门禁失败时不要通过降低阈值掩盖退化；先查看失败指标和用例，再说明算法调整或黄金集版本升级的理由。新增用例时必须明确 `actor_role`，权限场景还要验证低权限角色没有收到超出密级范围的引用。
 
+涉及 SQLite 表结构时，先阅读 [数据库迁移运维指南](docs/database_migrations.md)。已发布迁移不可修改，只能新增连续版本；改动至少要验证全新库、上一版本升级、重复执行和失败回滚：
+
+```powershell
+python -m pytest tests/test_schema_migrations.py
+python -m app.migration_cli status
+```
+
 如果只改了发布治理或文档，可以先运行相关静态测试，再跑全量测试：
 
 ```powershell
@@ -76,6 +83,7 @@ docker build --tag enterprise-rag-ai-agent-platform:local .
 - [docs/demo_runbook.md](docs/demo_runbook.md)
 - [docs/production_roadmap.md](docs/production_roadmap.md)
 - [docs/container_deployment.md](docs/container_deployment.md)
+- [docs/database_migrations.md](docs/database_migrations.md)
 - [docs/final_acceptance_report.md](docs/final_acceptance_report.md)
 - [docs/github_release_checklist.md](docs/github_release_checklist.md)
 

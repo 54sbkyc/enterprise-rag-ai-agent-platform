@@ -1,11 +1,12 @@
 # 数据库表说明
 
-系统使用 SQLite 存储结构化数据。数据库位于 `backend/data` 目录下，初始化脚本为 `backend/app/schema.sql`。
+系统使用 SQLite 存储结构化数据。默认数据库位于 `backend/data`，也可通过 `RAG_DB_PATH` 指定。表结构由 `backend/app/migrations.py` 和 `backend/app/migrations/` 下的不可变版本文件管理，运维流程见 [数据库迁移运维指南](database_migrations.md)。
 
 ## 表结构概览
 
 | 表名 | 作用 |
 | --- | --- |
+| `schema_migrations` | 记录 Schema 版本、迁移名称、SHA-256 校验值、应用时间和耗时。 |
 | `users` | 存储系统用户、角色、显示名称、启用状态和密码哈希。 |
 | `sessions` | 存储登录会话 token，用于接口鉴权。 |
 | `documents` | 存储文档元数据、密级、片段数、Embedding 状态和模型。 |

@@ -17,6 +17,7 @@
 - `start.ps1`：一键创建虚拟环境、安装依赖、启动服务。
 - `backend/app/`：FastAPI 后端、RAG、Agent、权限、安全、评测、可观测等核心代码。
 - `backend/app/embeddings.py`、`backend/app/vector_store.py`、`backend/app/agent_planner.py`、`backend/app/evaluation_*.py`：向量生成、pgvector 存储适配、受控规划、版本化数据集和质量门禁核心实现。
+- `backend/app/migrations.py`、`backend/app/migrations/`、`backend/app/migration_cli.py`：版本化 Schema、不可变迁移、校验历史、在线备份和升级运维入口。
 - `backend/evaluation/golden_cases.v2.json`、`backend/evaluation/approved_baseline.v2.json`：进入代码评审的 12 条角色化 RAG 黄金数据集与批准基线；v1 文件仅保留为历史快照。
 - `backend/tests/`：pytest 测试，证明核心流程可回归。
 - `backend/requirements.txt`、`backend/requirements-runtime.txt`：开发测试依赖和容器精简运行依赖。
@@ -32,6 +33,7 @@
 - `docs/production_roadmap.md`：生产化演进路径，说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent、部门级 ACL 等升级方向。
 - `docs/container_deployment.md`：容器启动、强密码、就绪检查、日志、持久卷备份和单实例边界。
 - `docs/pgvector_retrieval.md`：真实向量后端的配置、历史对账、权限过滤、故障降级、CI 证据和诚实边界。
+- `docs/database_migrations.md`：SQLite Schema 状态、备份、升级、失败恢复和新增迁移规则。
 - `docs/rag_quality_gate.md`：门禁指标、阈值、基线匹配、CLI 与 CI 行为说明。
 - `docs/final_acceptance_report.md`：最终验收报告，说明功能完成度、工程完成度、发布前验证和生产化边界。
 - `docs/screenshots/`：README 使用的展示截图。

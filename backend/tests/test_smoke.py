@@ -14,6 +14,10 @@ def test_liveness_and_database_readiness_endpoints(client):
     assert ready_response.status_code == 200
     assert ready_response.json()["status"] == "ready"
     assert ready_response.json()["database"] == "ok"
+    schema = ready_response.json()["schema_migrations"]
+    assert schema["status"] == "ready"
+    assert schema["current_version"] == schema["expected_version"] == 1
+    assert schema["pending_versions"] == []
     assert ready_response.json()["lexical_index"] == {
         "backend": "sqlite_fts5",
         "status": "ready",
@@ -47,6 +51,28 @@ def test_readiness_returns_503_without_exposing_database_errors(client, monkeypa
     assert response.status_code == 503
     assert response.json() == {"detail": "service is not ready"}
     assert "private database path" not in response.text
+
+
+def test_readiness_rejects_schema_version_mismatch(client, monkeypatch):
+    from app import main
+    from app.migrations import MigrationStatus
+
+    monkeypatch.setattr(
+        main,
+        "migration_status",
+        lambda _conn: MigrationStatus(
+            status="pending",
+            current_version=0,
+            expected_version=1,
+            applied_count=0,
+            pending_versions=(1,),
+        ),
+    )
+
+    response = client.get("/api/health/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "service is not ready"}
 
 
 def test_readiness_exposes_pgvector_degradation_and_can_require_it(client, monkeypatch):
