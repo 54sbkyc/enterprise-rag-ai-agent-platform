@@ -1,8 +1,7 @@
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
+
+from .provider_gateway import policy_from_env, post_json
 
 
 @dataclass(frozen=True)
@@ -12,6 +11,9 @@ class LLMGeneration:
     attempted: bool
     usage: dict[str, int] = field(default_factory=dict)
     fallback_reason: str | None = None
+    provider_attempts: int = 0
+    provider_latency_ms: int = 0
+    provider_status_code: int | None = None
 
 
 def generate_with_llm(question: str, citations: list[dict]) -> LLMGeneration:
@@ -39,39 +41,58 @@ def generate_with_llm(question: str, citations: list[dict]) -> LLMGeneration:
         ],
         "temperature": 0.2,
     }
-    request = urllib.request.Request(
+    response = post_json(
         f"{base_url}/chat/completions",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        payload=payload,
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
-        method="POST",
+        policy=policy_from_env("LLM", default_timeout_seconds=20, default_max_attempts=3),
     )
+    if not response.ready:
+        return LLMGeneration(
+            answer=None,
+            model=model,
+            attempted=True,
+            fallback_reason=response.error,
+            provider_attempts=response.attempts,
+            provider_latency_ms=response.latency_ms,
+            provider_status_code=response.status_code,
+        )
+
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        answer = data["choices"][0]["message"]["content"].strip()
+        data = response.payload or {}
+        raw_answer = data["choices"][0]["message"]["content"]
+        if not isinstance(raw_answer, str):
+            raise ValueError("answer must be text")
+        answer = raw_answer.strip()
         if not answer:
             raise ValueError("empty answer")
         raw_usage = data.get("usage") or {}
+        if not isinstance(raw_usage, dict):
+            raise ValueError("usage must be an object")
         usage = {
             "prompt_tokens": int(raw_usage.get("prompt_tokens") or 0),
             "completion_tokens": int(raw_usage.get("completion_tokens") or 0),
             "total_tokens": int(raw_usage.get("total_tokens") or 0),
         }
-        return LLMGeneration(answer=answer, model=model, attempted=True, usage=usage)
-    except urllib.error.URLError:
         return LLMGeneration(
-            answer=None,
+            answer=answer,
             model=model,
             attempted=True,
-            fallback_reason="provider_unavailable",
+            usage=usage,
+            provider_attempts=response.attempts,
+            provider_latency_ms=response.latency_ms,
+            provider_status_code=response.status_code,
         )
-    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+    except (KeyError, IndexError, TypeError, ValueError):
         return LLMGeneration(
             answer=None,
             model=model,
             attempted=True,
             fallback_reason="invalid_provider_response",
+            provider_attempts=response.attempts,
+            provider_latency_ms=response.latency_ms,
+            provider_status_code=response.status_code,
         )

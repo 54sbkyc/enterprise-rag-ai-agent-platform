@@ -1,10 +1,9 @@
 import hashlib
 import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 
+from .provider_gateway import policy_from_env, post_json
 from .text_processing import token_counts
 
 
@@ -14,6 +13,9 @@ class EmbeddingBatch:
     model: str | None
     vectors: list[list[float]] = field(default_factory=list)
     error: str | None = None
+    provider_attempts: int = 0
+    provider_latency_ms: int = 0
+    provider_status_code: int | None = None
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,17 @@ class ChunkIndex:
     model: str | None
     items: list[ChunkIndexItem]
     error: str | None = None
+    provider_attempts: int = 0
+    provider_latency_ms: int = 0
+    provider_status_code: int | None = None
+
+    def provider_diagnostics(self) -> dict:
+        return {
+            "attempts": self.provider_attempts,
+            "latency_ms": self.provider_latency_ms,
+            "status_code": self.provider_status_code,
+            "error": self.error,
+        }
 
 
 def build_chunk_index(chunks: list[str], model: str | None = None) -> ChunkIndex:
@@ -49,7 +62,15 @@ def build_chunk_index(chunks: list[str], model: str | None = None) -> ChunkIndex
         )
         for content, vector in zip(chunks, vectors)
     ]
-    return ChunkIndex(status=batch.status, model=batch.model, items=items, error=batch.error)
+    return ChunkIndex(
+        status=batch.status,
+        model=batch.model,
+        items=items,
+        error=batch.error,
+        provider_attempts=batch.provider_attempts,
+        provider_latency_ms=batch.provider_latency_ms,
+        provider_status_code=batch.provider_status_code,
+    )
 
 
 def embed_query(text: str, model: str) -> list[float] | None:
@@ -73,32 +94,68 @@ def embed_texts(texts: list[str], model: str | None = None) -> EmbeddingBatch:
         or "https://api.openai.com/v1"
     ).rstrip("/")
     batch_size = _positive_int("EMBEDDING_BATCH_SIZE", 32)
-    timeout = _positive_int("EMBEDDING_TIMEOUT_SECONDS", 30)
+    policy = policy_from_env("EMBEDDING", default_timeout_seconds=30, default_max_attempts=3)
     vectors: list[list[float]] = []
+    provider_attempts = 0
+    provider_latency_ms = 0
+    provider_status_code: int | None = None
 
-    try:
-        for start in range(0, len(texts), batch_size):
-            batch = texts[start : start + batch_size]
-            request = urllib.request.Request(
-                f"{base_url}/embeddings",
-                data=json.dumps({"model": effective_model, "input": batch}, ensure_ascii=False).encode("utf-8"),
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                method="POST",
+    for start in range(0, len(texts), batch_size):
+        batch = texts[start : start + batch_size]
+        response = post_json(
+            f"{base_url}/embeddings",
+            payload={"model": effective_model, "input": batch},
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            policy=policy,
+        )
+        provider_attempts += response.attempts
+        provider_latency_ms += response.latency_ms
+        provider_status_code = response.status_code
+        if not response.ready:
+            return EmbeddingBatch(
+                status="failed",
+                model=effective_model,
+                error=response.error,
+                provider_attempts=provider_attempts,
+                provider_latency_ms=provider_latency_ms,
+                provider_status_code=provider_status_code,
             )
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            ordered = sorted(payload["data"], key=lambda item: int(item.get("index", 0)))
+        try:
+            payload = response.payload or {}
+            raw_items = payload["data"]
+            if not isinstance(raw_items, list) or any(not isinstance(item, dict) for item in raw_items):
+                raise ValueError("embedding data must be a list of objects")
+            ordered = sorted(raw_items, key=lambda item: int(item.get("index", 0)))
             batch_vectors = [[float(value) for value in item["embedding"]] for item in ordered]
             if len(batch_vectors) != len(batch):
                 raise ValueError("embedding count mismatch")
             vectors.extend(batch_vectors)
-        if vectors and len({len(vector) for vector in vectors}) != 1:
-            raise ValueError("embedding dimensions mismatch")
-        return EmbeddingBatch(status="ready", model=effective_model, vectors=vectors)
-    except urllib.error.URLError:
-        return EmbeddingBatch(status="failed", model=effective_model, error="provider_unavailable")
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-        return EmbeddingBatch(status="failed", model=effective_model, error="invalid_provider_response")
+        except (KeyError, TypeError, ValueError):
+            return EmbeddingBatch(
+                status="failed",
+                model=effective_model,
+                error="invalid_provider_response",
+                provider_attempts=provider_attempts,
+                provider_latency_ms=provider_latency_ms,
+                provider_status_code=provider_status_code,
+            )
+    if vectors and len({len(vector) for vector in vectors}) != 1:
+        return EmbeddingBatch(
+            status="failed",
+            model=effective_model,
+            error="invalid_provider_response",
+            provider_attempts=provider_attempts,
+            provider_latency_ms=provider_latency_ms,
+            provider_status_code=provider_status_code,
+        )
+    return EmbeddingBatch(
+        status="ready",
+        model=effective_model,
+        vectors=vectors,
+        provider_attempts=provider_attempts,
+        provider_latency_ms=provider_latency_ms,
+        provider_status_code=provider_status_code,
+    )
 
 
 def _positive_int(name: str, default: int) -> int:

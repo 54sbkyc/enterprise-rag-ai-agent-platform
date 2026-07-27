@@ -39,6 +39,9 @@ def test_llm_provider_usage_is_exposed_in_observability(client, employee_headers
             model="interview-test-model",
             attempted=True,
             usage={"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150},
+            provider_attempts=2,
+            provider_latency_ms=84,
+            provider_status_code=200,
         ),
     )
 
@@ -54,8 +57,15 @@ def test_llm_provider_usage_is_exposed_in_observability(client, employee_headers
     assert usage["token_source"] == "provider"
     assert usage["model"] == "interview-test-model"
     assert usage["total_tokens"] == 150
+    assert usage["provider_attempts"] == 2
+    assert usage["provider_latency_ms"] == 84
+    assert usage["provider_status_code"] == 200
     generation_step = response.json()["agent_trace"][-1]
     assert generation_step["metrics"]["generation_mode"] == "llm"
+    with get_conn() as conn:
+        persisted = json.loads(conn.execute("SELECT usage_json FROM qa_logs ORDER BY id DESC LIMIT 1").fetchone()[0])
+    assert persisted["provider_attempts"] == 2
+    assert persisted["provider_latency_ms"] == 84
 
 
 def test_llm_failure_is_marked_as_local_fallback(client, employee_headers, monkeypatch):
@@ -70,6 +80,9 @@ def test_llm_failure_is_marked_as_local_fallback(client, employee_headers, monke
             attempted=True,
             usage={},
             fallback_reason="provider_unavailable",
+            provider_attempts=3,
+            provider_latency_ms=250,
+            provider_status_code=503,
         ),
     )
 
@@ -86,4 +99,7 @@ def test_llm_failure_is_marked_as_local_fallback(client, employee_headers, monke
     assert body["usage"]["requested_model"] == "interview-test-model"
     assert body["usage"]["generation_mode"] == "local_fallback"
     assert body["usage"]["fallback_reason"] == "provider_unavailable"
+    assert body["usage"]["provider_attempts"] == 3
+    assert body["usage"]["provider_latency_ms"] == 250
+    assert body["usage"]["provider_status_code"] == 503
     assert body["usage"]["token_source"] == "estimated"

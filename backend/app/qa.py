@@ -78,6 +78,9 @@ def build_grounded_answer(question: str, hits: list[SearchHit]) -> tuple[str, fl
                 "requested_model": llm_result.model,
                 "provider_usage": llm_result.usage,
                 "fallback_reason": None,
+                "provider_attempts": llm_result.provider_attempts,
+                "provider_latency_ms": llm_result.provider_latency_ms,
+                "provider_status_code": llm_result.provider_status_code,
             },
         )
 
@@ -103,6 +106,9 @@ def build_grounded_answer(question: str, hits: list[SearchHit]) -> tuple[str, fl
             {
                 "mode": "local_fallback",
                 "requested_model": llm_result.model,
+                "provider_attempts": llm_result.provider_attempts,
+                "provider_latency_ms": llm_result.provider_latency_ms,
+                "provider_status_code": llm_result.provider_status_code,
             }
         )
     return mask_sensitive(answer), confidence, citations, generation
@@ -129,6 +135,9 @@ def local_generation(
         "requested_model": None,
         "provider_usage": {},
         "fallback_reason": reason,
+        "provider_attempts": 0,
+        "provider_latency_ms": 0,
+        "provider_status_code": None,
     }
     if evidence_coverage is not None:
         result["evidence_coverage"] = round(evidence_coverage, 4)

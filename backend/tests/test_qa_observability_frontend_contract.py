@@ -24,3 +24,6 @@ def test_frontend_renders_qa_trace_and_usage_from_ask_response():
     assert "renderQaUsage(result.usage || null)" in script
     assert "qa-trace-item" in script
     assert "usage-metric" in script
+    assert "usage.provider_attempts" in script
+    assert "usage.provider_latency_ms" in script
+    assert "usage.provider_status_code" in script

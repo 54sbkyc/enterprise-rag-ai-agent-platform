@@ -5,7 +5,7 @@
 ## 面试前一天
 
 - 确认 [GitHub Actions](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml) 为绿色。
-- 确认 [v1.5.0 Release](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.5.0) 可以打开。
+- 确认 [v1.6.0 Release](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.6.0) 可以打开。
 - 本地运行 `git status -sb`，确保公开仓库工作区干净。
 - 运行 `\.\scripts\verify_project.ps1`，记录当前 pytest 通过数量。
 - 确认验证输出中的 RAG quality gate 为 `PASSED`，Actions 中可下载 JSON 报告。
@@ -13,7 +13,7 @@
 
 ## 面试前五分钟
 
-1. 运行 `\.\start.ps1`，确认健康检查返回 `version: 1.3.0` 和 `status: ok`。
+1. 运行 `\.\start.ps1`，确认健康检查返回 `version: 1.6.0` 和 `status: ok`。
 2. 使用 `admin / admin123` 登录，确认文档、检索、Agent 和评测页面可进入。
 3. 提前打开 GitHub 仓库、Actions、Release 和本地应用四个标签页。
 4. 关闭无关软件和通知，不展示 `.env`、数据库、上传目录或个人文件。
@@ -48,7 +48,7 @@
 ## 故障预案
 
 - **Embedding 未配置**：明确说明当前走 BM25，本地界面会展示向量分数为 0；不要声称语义通道已启用。
-- **LLM 未配置或调用失败**：展示本地抽取或透明降级状态，说明回答仍受引用和覆盖率闸门约束。
+- **LLM 未配置或调用失败**：展示本地抽取或透明降级状态，以及模型尝试次数、延迟和错误分类；说明回答仍受引用和覆盖率闸门约束。
 - **网络不可用**：使用本地应用、README 截图和已保存架构图继续演示。
 - **本地服务异常**：先展示 GitHub Actions、Release 和测试结果，不在面试现场长时间排障。
 

@@ -4,6 +4,34 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-27
+
+面向外部模型故障恢复、透明降级和调用诊断的模型韧性版本。
+
+### Added
+
+- 新增共享模型韧性网关，统一保护问答生成、Embedding 和 Agent Planner 调用。
+- 新增可配置超时、选择性重试、指数退避、`Retry-After`、进程内熔断和响应大小上限。
+- 新增模型尝试次数、总延迟、HTTP 状态、错误分类与健康检查聚合指标。
+- 新增 429、超时、401、连续 503、半开恢复和超大响应故障注入测试。
+
+### Changed
+
+- 问答模型失败继续回退本地抽取，Agent Planner 回退确定性计划；Embedding 失败不写入部分批次向量。
+- 问答用量面板和 Agent 计划摘要展示真实供应商调用诊断。
+
+### Validation
+
+- 161 项 pytest 自动化测试通过，2 项真实 pgvector PostgreSQL 测试在本地按设计跳过并由 CI 专用任务执行。
+- 9 项模型网关测试覆盖 429、`Retry-After`、超时、401、连续 503、熔断、半开恢复、响应上限和三条调用链诊断。
+- 12 条角色化黄金用例全部通过，Recall@K、MRR、答案、拒答与访问控制准确率均为 100%。
+- 隔离数据库真实启动验收通过，FTS5、SQLite 向量后端和未配置模型时的本地降级状态正确。
+
+### Known Boundaries
+
+- 熔断状态和聚合计数器属于单进程，匹配当前单 Worker 容器；多实例部署需要共享模型代理或 API Gateway。
+- 当前记录单次问答模型用量和进程内聚合指标，生产环境仍需集中 tracing、告警、预算和供应商路由。
+
 ## [1.5.0] - 2026-07-22
 
 面向有界关键词召回、混合检索扩展性和实时权限复核的检索升级版本。
@@ -157,7 +185,8 @@
 - Agent 当前同步执行；生产环境仍需异步队列、幂等、取消和人工审批。
 - 关键条件覆盖率是可配置启发式规则，需要用真实业务评测集持续校准。
 
-[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.2.0...v1.3.0

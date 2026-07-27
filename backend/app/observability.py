@@ -19,6 +19,9 @@ def build_usage_summary(question: str, citations: list[dict], answer: str, gener
         "requested_model": None,
         "provider_usage": {},
         "fallback_reason": None,
+        "provider_attempts": 0,
+        "provider_latency_ms": 0,
+        "provider_status_code": None,
     }
     provider_usage = generation.get("provider_usage") or {}
     token_source = "provider" if generation.get("mode") == "llm" and provider_usage else "estimated"
@@ -35,6 +38,9 @@ def build_usage_summary(question: str, citations: list[dict], answer: str, gener
         "requested_model": generation.get("requested_model"),
         "generation_mode": generation.get("mode", "local_extractive"),
         "fallback_reason": generation.get("fallback_reason"),
+        "provider_attempts": int(generation.get("provider_attempts") or 0),
+        "provider_latency_ms": int(generation.get("provider_latency_ms") or 0),
+        "provider_status_code": generation.get("provider_status_code"),
         "evidence_coverage": generation.get("evidence_coverage"),
         "missing_evidence_terms": generation.get("missing_evidence_terms") or [],
         "token_source": token_source,
@@ -100,6 +106,9 @@ def build_agent_trace(
                     "requested_model": usage.get("requested_model"),
                     "generation_mode": usage.get("generation_mode"),
                     "fallback_reason": usage.get("fallback_reason"),
+                    "provider_attempts": usage.get("provider_attempts", 0),
+                    "provider_latency_ms": usage.get("provider_latency_ms", 0),
+                    "provider_status_code": usage.get("provider_status_code"),
                     "evidence_coverage": usage.get("evidence_coverage"),
                     "missing_evidence_terms": usage.get("missing_evidence_terms") or [],
                     "token_source": usage.get("token_source"),
