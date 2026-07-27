@@ -57,6 +57,7 @@ from .evaluation_gate import (
 )
 from .evaluation_metrics import evaluate_case_signals
 from .lexical_index import lexical_index_health
+from .migrations import migration_status
 from .observability import build_agent_trace, build_usage_summary
 from .pagination import normalize_pagination, paginated
 from .permissions import (
@@ -263,6 +264,9 @@ def readiness() -> dict:
     try:
         with get_conn() as conn:
             conn.execute("SELECT 1").fetchone()
+            schema_health = migration_status(conn)
+            if not schema_health.ready:
+                raise RuntimeError("database schema is not ready")
             lexical_health = lexical_index_health(conn)
     except Exception:
         raise HTTPException(status_code=503, detail="service is not ready") from None
@@ -274,6 +278,7 @@ def readiness() -> dict:
         "version": APP_VERSION,
         "status": "ready",
         "database": "ok",
+        "schema_migrations": schema_health.public_dict(),
         "lexical_index": lexical_health.public_dict(),
         "vector_store": vector_health.public_dict(),
         "model_gateway": provider_gateway_health(),

@@ -38,7 +38,7 @@
 目标是让系统从本地原型变成可部署服务。
 
 - 将 SQLite 迁移到 PostgreSQL。
-- 引入数据库迁移工具，管理 schema 变更。
+- 已引入 SQLite 版本化迁移、历史 SHA-256 校验、逐版本事务、并发启动锁、在线备份与 readiness 版本检查；迁移 PostgreSQL 时再切换到 Alembic。
 - 上传文件改为对象存储或受控文件服务。
 - 区分本地、测试、生产环境配置。
 - 使用 GitHub Actions 运行测试，发布前自动执行 `python -m pytest`。

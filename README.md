@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/54sbkyc/enterprise-rag-ai-agent-platform)](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases)
 [![License](https://img.shields.io/github/license/54sbkyc/enterprise-rag-ai-agent-platform)](LICENSE)
 
-一个面向 AI 应用开发岗位的 Python 全栈项目。当前模型韧性版本为 `v1.6.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志和 AI 调用可观测。
+一个面向 AI 应用开发岗位的 Python 全栈项目。当前数据库演进版本为 `v1.7.0`。系统围绕企业内部知识库问答场景，完整实现了文档入库、权限过滤、RAG 检索问答、引用溯源、AI Agent 工具调用、问答质量评测、安全拦截、审计日志、AI 调用可观测和版本化 Schema 迁移。
 
 这个项目不是单纯的聊天页面，而是一个可以向面试官展示工程闭环的 AI 应用：能回答、能追溯、能评测、能治理、能看到成本和运行过程。
 
@@ -20,8 +20,10 @@
 | [Docker 安全部署](docs/container_deployment.md) | 使用非 root 容器、持久卷、就绪检查和生产管理员引导完成可复现部署。 |
 | [pgvector 检索后端](docs/pgvector_retrieval.md) | 启用真实 HNSW 向量检索、连接池、历史索引对账、透明降级和 CI 数据库验证。 |
 | [模型网关韧性](docs/model_gateway_resilience.md) | 查看模型超时、选择性重试、指数退避、熔断、错误分类和故障注入验证。 |
+| [数据库迁移运维](docs/database_migrations.md) | 查看 Schema 版本、事务升级、漂移检测、备份恢复和运维命令。 |
 | [生产化路线图](docs/production_roadmap.md) | 说明 embedding、pgvector、rerank、PostgreSQL、异步 Agent 和 ACL 升级路径。 |
 | [最终验收报告](docs/final_acceptance_report.md) | 说明发布前验收、工程完整度和诚实边界。 |
+| [v1.7.0 版本说明](docs/releases/v1.7.0.md) | 查看旧库兼容升级、迁移校验、并发幂等和事务回滚证据。 |
 | [v1.6.0 版本说明](docs/releases/v1.6.0.md) | 查看共享模型网关、选择性重试、熔断、调用诊断和故障注入证据。 |
 | [v1.5.0 版本说明](docs/releases/v1.5.0.md) | 查看 FTS5 有界关键词候选、文档级 pgvector ACL、规模回归和完整 CI 证据。 |
 | [v1.4.0 版本说明](docs/releases/v1.4.0.md) | 查看 pgvector HNSW、连接池、权限候选过滤、索引对账和真实数据库 CI 结果。 |
@@ -54,6 +56,7 @@
 | 回归门禁 | 版本化黄金集、SHA-256 指纹、批准/历史基线、阈值判定和 CI 失败退出码 |
 | 企业安全 | 角色权限、文档密级过滤、受限主题保守拒答、Prompt 注入拦截、敏感信息脱敏、审计日志 |
 | 可复现部署 | 非 root Docker 镜像、只读根文件系统、强密码引导、持久卷、数据库就绪检查和容器 CI 烟测 |
+| 数据库演进 | 版本化迁移历史、SHA-256 漂移检测、逐版本事务、并发启动串行化和旧数据保留回归 |
 | 产品闭环 | 低置信度问题、员工反馈和 Agent 结果可沉淀为知识缺口，形成知识库治理流程 |
 | 全栈实现 | FastAPI + SQLite 后端，原生 HTML/CSS/JavaScript 前端，自动化测试覆盖核心流程 |
 
@@ -73,6 +76,7 @@
 - 质量治理：使用只读角色化黄金数据集执行召回、排序、答案、拒答和访问控制评测，记录绝对阈值、批准/历史基线变化；问答反馈、知识缺口和健康体检形成后续治理闭环。
 - 安全审计：记录问答日志、拦截原因、管理操作、文档变更和评测结果。
 - 运行时加固：会话默认 12 小时过期，上传默认限制 10 MB，跨域默认关闭且拒绝通配来源。
+- Schema 迁移：启动时按顺序应用不可变迁移，记录版本、校验值、时间与耗时；校验漂移、未来版本或失败升级会阻止服务就绪。
 - 容器交付：生产配置禁止空密码和默认演示账号，镜像以非 root 单 Worker 运行，并通过持久卷和数据库就绪端点支持稳定重启。
 
 ## 技术栈
@@ -103,6 +107,8 @@ flowchart LR
     API --> Gateway["模型韧性网关"]
     API --> Audit["审计日志"]
     Docs --> DB["SQLite"]
+    API --> Migrate["Schema 迁移与校验"]
+    Migrate --> DB
     Search --> DB
     Search --> FTS["SQLite FTS5 候选索引"]
     Docs -. "可选向量同步" .-> PG["PostgreSQL + pgvector"]
@@ -160,6 +166,19 @@ http://127.0.0.1:8001
 .\.venv\Scripts\python.exe backend\seed_enterprise_documents.py
 ```
 
+## 数据库升级
+
+服务启动会自动应用待执行的 SQLite Schema 迁移。部署前可先检查状态，再在备份后显式升级：
+
+```powershell
+cd backend
+python -m app.migration_cli status
+python -m app.migration_cli backup
+python -m app.migration_cli upgrade
+```
+
+`status` 不修改 Schema；已应用迁移的名称或 SHA-256 校验值与仓库不一致时，应用会拒绝继续启动。备份、恢复、失败处理和不可逆变更规则见 [数据库迁移运维指南](docs/database_migrations.md)。
+
 ## Docker 部署
 
 在安装 Docker Desktop 后，从模板创建不提交到 Git 的本地配置，并设置 `RAG_BOOTSTRAP_ADMIN_PASSWORD`：
@@ -205,7 +224,7 @@ cd backend
 python -m pytest
 ```
 
-当前版本覆盖了 Agent 工具调用、AI 可观测、权限控制、分页、质量评测、安全拦截、前端契约和基础烟雾测试。
+当前版本覆盖了 Agent 工具调用、AI 可观测、权限控制、分页、质量评测、安全拦截、Schema 迁移、前端契约和基础烟雾测试。
 
 单独运行可复现的 RAG 质量门禁：
 
@@ -228,7 +247,7 @@ python -m app.eval_gate_cli --output ..\.runtime\evaluation-gate-report.json
 
 ## CI 与生产化
 
-仓库提供 GitHub Actions 工作流 [.github/workflows/tests.yml](.github/workflows/tests.yml)，推送到 `main`/`master` 或提交 Pull Request 时会运行 pytest、确定性 RAG 质量门禁和容器烟测，并上传 JSON 评测报告。容器烟测还会验证生产空密码启动失败、非 root 身份、数据库就绪、管理员登录和持久卷重启。代码测试通过但 AI 指标或部署契约不达标时，CI 仍会失败。
+仓库提供 GitHub Actions 工作流 [.github/workflows/tests.yml](.github/workflows/tests.yml)，推送到 `main`/`master` 或提交 Pull Request 时会运行 pytest、确定性 RAG 质量门禁和容器烟测，并上传 JSON 评测报告。pytest 会验证旧库升级、校验漂移、失败回滚和并发启动；容器烟测还会验证生产空密码启动失败、非 root 身份、数据库 Schema 就绪、管理员登录和持久卷重启。代码测试通过但 AI 指标或部署契约不达标时，CI 仍会失败。
 
 生产化演进路径见 [docs/production_roadmap.md](docs/production_roadmap.md)，重点覆盖 embedding + pgvector + rerank、PostgreSQL、异步 Agent、部门级 ACL、观测与成本治理等升级方向。
 
@@ -264,9 +283,11 @@ enterprise-rag-qa
 │  │  ├─ evaluation_gate.py   # 阈值与批准/历史基线门禁
 │  │  ├─ evaluation_metrics.py # Recall、MRR、答案、拒答与访问控制指标
 │  │  ├─ eval_gate_cli.py     # 隔离运行的 CI 质量门禁
+│  │  ├─ migrations.py        # Schema 版本、事务升级与历史校验
+│  │  ├─ migration_cli.py     # 状态、在线备份与显式升级命令
+│  │  ├─ migrations           # 不可变 SQLite 迁移文件
 │  │  ├─ qa.py                # 回答生成
 │  │  ├─ security.py          # 安全拦截与脱敏
-│  │  └─ schema.sql           # SQLite 表结构
 │  ├─ evaluation             # 版本化 RAG 黄金数据集
 │  ├─ tests                  # pytest 测试
 │  ├─ check_requirements.py  # 锁定依赖完整性检查

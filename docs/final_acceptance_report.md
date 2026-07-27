@@ -11,6 +11,7 @@
 - AI 应用演示脚本：[demo_runbook.md](demo_runbook.md)
 - Docker 安全部署：[container_deployment.md](container_deployment.md)
 - pgvector 检索后端：[pgvector_retrieval.md](pgvector_retrieval.md)
+- 数据库迁移运维：[database_migrations.md](database_migrations.md)
 - 生产化路线图：[production_roadmap.md](production_roadmap.md)
 - GitHub 发布清单：[github_release_checklist.md](github_release_checklist.md)
 - 安全说明：[../SECURITY.md](../SECURITY.md)
@@ -43,6 +44,7 @@ GitHub 发布版需要包含 `docs/resume_project_card.md` 和 `docs/portfolio_r
 | 向量检索基础设施 | 已完成 | 支持 SQLite JSON 零服务模式与 pgvector HNSW 模式，包含连接池、实时允许 ID 过滤、历史对账和透明降级。 |
 | 安全拦截 | 已完成 | 支持 Prompt 注入拦截、敏感信息脱敏和审计记录。 |
 | 运行时防护 | 已完成 | 支持会话过期、上传限额、跨域白名单、生产强密码引导、数据库就绪检查，以及模型选择性重试、退避、熔断和透明降级。 |
+| Schema 演进 | 已完成 | 支持版本历史、SHA-256 漂移检测、逐版本事务、并发升级串行化、在线备份和 readiness 版本检查。 |
 | AI Agent | 已完成 | 支持受控规划、工具白名单、进程内异步执行、权限检查、幂等提交、协作式取消、失败重试和生命周期持久化。 |
 | AI 可观测 | 已完成 | 记录决策轨迹、生成方式、模型尝试次数、总延迟、HTTP 状态、Token 来源、成本估算、Agent 运行和工具调用指标。 |
 | 质量评测 | 已完成 | 12 条黄金用例按角色执行，支持 Recall@K、MRR、答案、拒答、访问控制准确率和报告导出。 |
@@ -56,11 +58,11 @@ GitHub 发布版需要包含 `docs/resume_project_card.md` 和 `docs/portfolio_r
 | 一键启动 | 已完成 | `start.ps1` 可创建虚拟环境、安装依赖并启动服务。 |
 | 离线演示 | 已完成 | 未配置 API Key 时可使用本地抽取式回答。 |
 | 大模型接入 | 已完成 | 支持 OpenAI Chat Completions 兼容配置，并由共享模型网关统一保护问答、Embedding 和 Agent Planner。 |
-| 自动化测试 | 已完成 | pytest 覆盖 Agent、权限、安全、分页、质量评测、黄金集门禁、前端契约和发布治理。 |
+| 自动化测试 | 已完成 | pytest 覆盖 Agent、权限、安全、分页、质量评测、Schema 迁移、黄金集门禁、前端契约和发布治理。 |
 | AI 回归门禁 | 已完成 | 隔离数据库执行版本化黄金集，检查绝对阈值与批准/历史基线回退，失败时阻止 CI。 |
 | 环境一致性 | 已完成 | 逐项验证锁定依赖存在且版本一致，再执行依赖冲突检查。 |
 | 容器交付 | 已完成 | 非 root 单 Worker 镜像、只读根文件系统、持久卷和 Compose 安全默认项可在干净机器复现。 |
-| CI | 已完成 | GitHub Actions 运行 161 项 pytest、2 项真实 pgvector PostgreSQL 集成测试、RAG 门禁和容器构建/登录/重启烟测。 |
+| CI | 已完成 | GitHub Actions 运行 170 项 pytest、2 项真实 pgvector PostgreSQL 集成测试、RAG 门禁和容器构建/登录/重启烟测。 |
 | 发布治理 | 已完成 | `.gitignore`、发布清单和检查脚本隔离本地数据库、上传文件、缓存、Word 文档和隧道工具。 |
 | 密钥防泄漏 | 已完成 | 发布检查会扫描公开源码和文档中的常见疑似密钥格式。 |
 | 文档完整性 | 已完成 | README、面试文档、生产化路线图、发布清单和本报告形成完整说明链路。 |
@@ -102,7 +104,7 @@ git status --ignored
 
 - 检索层已支持 FTS5 有界关键词候选、字段加权 BM25、可选 SQLite/pgvector 向量召回和本地重排；pgvector 使用 HNSW、连接池和实时允许文档 ID 过滤，最终回载再次复核当前 ACL。生产环境仍需迁移统一业务数据库，并接入独立 rerank 模型。
 - 本地回答已增加关键条件覆盖率闸门，能拒绝“召回相似资料但核心条件无依据”的问题；该启发式阈值仍需用真实业务评测集持续校准。
-- 数据库当前使用 SQLite，适合轻量演示；生产环境建议迁移到 PostgreSQL。
+- 数据库当前使用 SQLite，已具备可校验迁移与备份恢复流程，适合单实例轻量部署；多实例生产环境仍建议迁移到 PostgreSQL/Alembic。
 - Agent 已有进程内异步执行、幂等、协作式取消、重试和持久化状态；生产环境仍需外部队列、任务租约、跨实例恢复、供应商级取消、人工审批和更细粒度 ACL。
 - 当前容器固定一个 Worker 并使用持久卷，适合单实例部署；公网与多实例环境仍需 HTTPS 反向代理、对象存储、SSO、集中日志和密钥托管。
 - 默认回答可离线运行；真实大模型效果需要配置 OpenAI 兼容 API。
@@ -115,5 +117,5 @@ git status --ignored
 可以这样介绍：
 
 ```text
-这个项目是我在毕业设计基础上继续升级出的 AI 应用开发作品集。它不是简单 ChatGPT 套壳，而是围绕企业知识库问答做了文档入库、权限过滤、RAG 检索、引用溯源、Agent 工具调用、安全审计、质量评测和 AI 可观测。为了让项目可以复现和交付，我还补了 161 项自动化测试、2 项真实 pgvector PostgreSQL 集成测试、RAG 质量门禁、非 root 容器、容器 CI 实跑、发布清单和最终验收报告。
+这个项目是我在毕业设计基础上继续升级出的 AI 应用开发作品集。它不是简单 ChatGPT 套壳，而是围绕企业知识库问答做了文档入库、权限过滤、RAG 检索、引用溯源、Agent 工具调用、安全审计、质量评测和 AI 可观测。为了让项目可以复现和交付，我还补了 170 项自动化测试、2 项真实 pgvector PostgreSQL 集成测试、RAG 质量门禁、版本化数据库迁移、非 root 容器、容器 CI 实跑、发布清单和最终验收报告。
 ```
