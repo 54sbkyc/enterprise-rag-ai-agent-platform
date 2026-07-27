@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -53,6 +54,7 @@ from .evaluation_gate import (
     QualityGatePolicy,
     evaluate_quality_gate,
     rounded_summary,
+    summarize_evaluation_breakdowns,
     summarize_evaluation_results,
 )
 from .evaluation_metrics import evaluate_case_signals
@@ -154,6 +156,10 @@ class EvaluationThresholds(BaseModel):
     answer_accuracy: float = Field(default=DEFAULT_THRESHOLDS["answer_accuracy"], ge=0, le=1)
     abstention_accuracy: float = Field(default=DEFAULT_THRESHOLDS["abstention_accuracy"], ge=0, le=1)
     access_control_accuracy: float = Field(default=DEFAULT_THRESHOLDS["access_control_accuracy"], ge=0, le=1)
+    citation_faithfulness: float = Field(default=DEFAULT_THRESHOLDS["citation_faithfulness"], ge=0, le=1)
+    safety_assertion_accuracy: float = Field(
+        default=DEFAULT_THRESHOLDS["safety_assertion_accuracy"], ge=0, le=1
+    )
 
 
 class BatchEvaluateRequest(BaseModel):
@@ -1870,8 +1876,10 @@ def list_evaluation_cases(
         total = conn.execute("SELECT COUNT(*) AS count FROM evaluation_cases").fetchone()["count"]
         rows = conn.execute(
             """
-            SELECT id, case_key, dataset_version, category, actor_role, question,
-                   expected_keywords, expected_documents, should_answer, created_at, updated_at
+            SELECT id, case_key, dataset_version, category, difficulty, capabilities_json,
+                   actor_role, question, expected_keywords, required_keyword_groups_json,
+                   forbidden_keywords_json, expected_documents, expected_document_groups_json,
+                   forbidden_documents_json, min_citations, should_answer, created_at, updated_at
             FROM evaluation_cases ORDER BY id
             LIMIT ? OFFSET ?
             """,
@@ -1930,8 +1938,10 @@ def create_evaluation_case(payload: EvaluationCaseRequest, user: dict = Depends(
         )
         row = conn.execute(
             """
-            SELECT id, case_key, dataset_version, category, actor_role, question,
-                   expected_keywords, expected_documents, should_answer, created_at, updated_at
+            SELECT id, case_key, dataset_version, category, difficulty, capabilities_json,
+                   actor_role, question, expected_keywords, required_keyword_groups_json,
+                   forbidden_keywords_json, expected_documents, expected_document_groups_json,
+                   forbidden_documents_json, min_citations, should_answer, created_at, updated_at
             FROM evaluation_cases WHERE id = ?
             """,
             (cursor.lastrowid,),
@@ -1974,8 +1984,10 @@ def update_evaluation_case(case_id: int, payload: EvaluationCaseRequest, user: d
         )
         row = conn.execute(
             """
-            SELECT id, case_key, dataset_version, category, actor_role, question,
-                   expected_keywords, expected_documents, should_answer, created_at, updated_at
+            SELECT id, case_key, dataset_version, category, difficulty, capabilities_json,
+                   actor_role, question, expected_keywords, required_keyword_groups_json,
+                   forbidden_keywords_json, expected_documents, expected_document_groups_json,
+                   forbidden_documents_json, min_citations, should_answer, created_at, updated_at
             FROM evaluation_cases WHERE id = ?
             """,
             (case_id,),
@@ -2008,8 +2020,10 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
             placeholders = ",".join("?" for _ in payload.case_ids)
             rows = conn.execute(
                 f"""
-                SELECT id, case_key, dataset_version, category, actor_role, question,
-                       expected_keywords, expected_documents, should_answer
+                SELECT id, case_key, dataset_version, category, difficulty, capabilities_json,
+                       actor_role, question, expected_keywords, required_keyword_groups_json,
+                       forbidden_keywords_json, expected_documents, expected_document_groups_json,
+                       forbidden_documents_json, min_citations, should_answer
                 FROM evaluation_cases WHERE id IN ({placeholders}) ORDER BY id
                 """,
                 payload.case_ids,
@@ -2018,8 +2032,10 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
             scope_clause = "" if payload.include_custom else "WHERE case_key IS NOT NULL"
             rows = conn.execute(
                 f"""
-                SELECT id, case_key, dataset_version, category, actor_role, question,
-                       expected_keywords, expected_documents, should_answer
+                SELECT id, case_key, dataset_version, category, difficulty, capabilities_json,
+                       actor_role, question, expected_keywords, required_keyword_groups_json,
+                       forbidden_keywords_json, expected_documents, expected_document_groups_json,
+                       forbidden_documents_json, min_citations, should_answer
                 FROM evaluation_cases {scope_clause} ORDER BY id
                 """
             ).fetchall()
@@ -2032,6 +2048,19 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
         row = dict(raw_row)
         row["expected_keywords"] = json.loads(row["expected_keywords"])
         row["expected_documents"] = json.loads(row["expected_documents"])
+        row["capabilities"] = json.loads(row.pop("capabilities_json", "[]") or "[]")
+        row["required_keyword_groups"] = json.loads(
+            row.pop("required_keyword_groups_json", "[]") or "[]"
+        )
+        row["forbidden_keywords"] = json.loads(
+            row.pop("forbidden_keywords_json", "[]") or "[]"
+        )
+        row["expected_document_groups"] = json.loads(
+            row.pop("expected_document_groups_json", "[]") or "[]"
+        )
+        row["forbidden_documents"] = json.loads(
+            row.pop("forbidden_documents_json", "[]") or "[]"
+        )
         row["should_answer"] = bool(row["should_answer"])
         cases.append(row)
 
@@ -2041,7 +2070,18 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
         expected_documents = row["expected_documents"]
         case_user = {**user, "role": row["actor_role"]}
         case_access_levels = allowed_access_levels(case_user)
+        started = time.perf_counter()
         ask_result = compute_answer(AskRequest(question=row["question"], top_k=payload.top_k), case_user)
+        latency_ms = max(0, round((time.perf_counter() - started) * 1000))
+        generation = ask_result.get("generation") or {
+            "mode": "blocked",
+            "model": "none",
+            "prompt_version": "grounded-answer-v1",
+            "fallback_reason": "security_policy",
+        }
+        usage = build_usage_summary(
+            row["question"], ask_result["citations"], ask_result["answer"], generation
+        )
         score = keyword_score(ask_result["answer"], keywords, ask_result["confidence"])
         citation_hit = citation_hit_score(ask_result["citations"], expected_documents)
         should_answer = row["should_answer"]
@@ -2053,16 +2093,28 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
             expected_documents=expected_documents,
             should_answer=should_answer,
             allowed_access_levels=case_access_levels,
+            required_keyword_groups=row["required_keyword_groups"],
+            forbidden_keywords=row["forbidden_keywords"],
+            expected_document_groups=row["expected_document_groups"],
+            forbidden_documents=row["forbidden_documents"],
+            min_citations=row["min_citations"],
         )
         results.append(
             {
                 "case_id": row["id"],
                 "case_key": row["case_key"],
                 "category": row["category"],
+                "difficulty": row["difficulty"],
+                "capabilities": row["capabilities"],
                 "actor_role": row["actor_role"],
                 "question": row["question"],
                 "expected_keywords": keywords,
+                "required_keyword_groups": row["required_keyword_groups"],
+                "forbidden_keywords": row["forbidden_keywords"],
                 "expected_documents": expected_documents,
+                "expected_document_groups": row["expected_document_groups"],
+                "forbidden_documents": row["forbidden_documents"],
+                "min_citations": row["min_citations"],
                 "answer": ask_result["answer"],
                 "score": score,
                 "confidence": ask_result["confidence"],
@@ -2071,13 +2123,38 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
                 "should_answer": should_answer,
                 "retrieval_recall": signals.retrieval_recall,
                 "reciprocal_rank": signals.reciprocal_rank,
+                "answer_completeness": signals.answer_completeness,
+                "citation_faithfulness": signals.citation_faithfulness,
                 "answer_correct": signals.answer_correct,
                 "abstention_correct": signals.abstention_correct,
                 "access_control_correct": signals.access_control_correct,
+                "forbidden_keyword_correct": signals.forbidden_keyword_correct,
+                "forbidden_document_correct": signals.forbidden_document_correct,
+                "citation_count_correct": signals.citation_count_correct,
+                "safety_assertion_correct": signals.safety_assertion_correct,
+                "generation_mode": usage["generation_mode"],
+                "model": usage["model"],
+                "prompt_version": usage["prompt_version"],
+                "prompt_tokens": usage["prompt_tokens"],
+                "completion_tokens": usage["completion_tokens"],
+                "total_tokens": usage["total_tokens"],
+                "estimated_cost_usd": usage["estimated_cost_usd"],
+                "latency_ms": latency_ms,
             }
         )
 
     summary = summarize_evaluation_results(results)
+    breakdowns = summarize_evaluation_breakdowns(results)
+    benchmark = {
+        "generation_modes": sorted({item["generation_mode"] for item in results}),
+        "models": sorted({item["model"] for item in results}),
+        "prompt_versions": sorted({item["prompt_version"] for item in results}),
+        "total_prompt_tokens": sum(item["prompt_tokens"] for item in results),
+        "total_completion_tokens": sum(item["completion_tokens"] for item in results),
+        "total_tokens": sum(item["total_tokens"] for item in results),
+        "estimated_cost_usd": round(sum(item["estimated_cost_usd"] for item in results), 6),
+        "avg_latency_ms": round(sum(item["latency_ms"] for item in results) / len(results), 2),
+    }
     versions = sorted({row["dataset_version"] for row in cases})
     dataset_version = versions[0] if len(versions) == 1 else "mixed"
     dataset_hash = cases_fingerprint(cases)
@@ -2132,8 +2209,32 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
             ),
         )
         run_id = cursor.lastrowid
+        conn.execute(
+            """
+            UPDATE batch_eval_runs
+            SET citation_faithfulness = ?, safety_assertion_accuracy = ?,
+                generation_modes_json = ?, models_json = ?, prompt_versions_json = ?,
+                total_prompt_tokens = ?, total_completion_tokens = ?, total_tokens = ?,
+                estimated_cost_usd = ?, avg_latency_ms = ?, breakdown_json = ?
+            WHERE id = ?
+            """,
+            (
+                summary["citation_faithfulness"],
+                summary["safety_assertion_accuracy"],
+                json.dumps(benchmark["generation_modes"], ensure_ascii=False),
+                json.dumps(benchmark["models"], ensure_ascii=False),
+                json.dumps(benchmark["prompt_versions"], ensure_ascii=False),
+                benchmark["total_prompt_tokens"],
+                benchmark["total_completion_tokens"],
+                benchmark["total_tokens"],
+                benchmark["estimated_cost_usd"],
+                benchmark["avg_latency_ms"],
+                json.dumps(breakdowns, ensure_ascii=False),
+                run_id,
+            ),
+        )
         for item in results:
-            conn.execute(
+            result_cursor = conn.execute(
                 """
                 INSERT INTO batch_eval_results(
                     run_id, case_id, actor_role, question, expected_keywords, expected_documents,
@@ -2164,6 +2265,45 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
                     created,
                 ),
             )
+            conn.execute(
+                """
+                UPDATE batch_eval_results
+                SET difficulty = ?, capabilities_json = ?,
+                    required_keyword_groups_json = ?, forbidden_keywords_json = ?,
+                    expected_document_groups_json = ?, forbidden_documents_json = ?,
+                    min_citations = ?, answer_completeness = ?, citation_faithfulness = ?,
+                    forbidden_keyword_correct = ?, forbidden_document_correct = ?,
+                    citation_count_correct = ?, safety_assertion_correct = ?,
+                    generation_mode = ?, model = ?, prompt_version = ?,
+                    prompt_tokens = ?, completion_tokens = ?, total_tokens = ?,
+                    estimated_cost_usd = ?, latency_ms = ?
+                WHERE id = ?
+                """,
+                (
+                    item["difficulty"],
+                    json.dumps(item["capabilities"], ensure_ascii=False),
+                    json.dumps(item["required_keyword_groups"], ensure_ascii=False),
+                    json.dumps(item["forbidden_keywords"], ensure_ascii=False),
+                    json.dumps(item["expected_document_groups"], ensure_ascii=False),
+                    json.dumps(item["forbidden_documents"], ensure_ascii=False),
+                    item["min_citations"],
+                    item["answer_completeness"],
+                    item["citation_faithfulness"],
+                    item["forbidden_keyword_correct"],
+                    item["forbidden_document_correct"],
+                    item["citation_count_correct"],
+                    item["safety_assertion_correct"],
+                    item["generation_mode"],
+                    item["model"],
+                    item["prompt_version"],
+                    item["prompt_tokens"],
+                    item["completion_tokens"],
+                    item["total_tokens"],
+                    item["estimated_cost_usd"],
+                    item["latency_ms"],
+                    result_cursor.lastrowid,
+                ),
+            )
 
     write_audit(
         user,
@@ -2185,6 +2325,8 @@ def run_batch_evaluation(payload: BatchEvaluateRequest, user: dict = Depends(cur
             "top_k": payload.top_k,
         },
         "summary": rounded_summary(summary),
+        "breakdowns": breakdowns,
+        "benchmark": benchmark,
         "gate": gate,
         "results": [
             {
@@ -2219,6 +2361,10 @@ def list_batch_runs(
             SELECT r.id, r.dataset_version, r.dataset_hash, r.top_k,
                    r.total, r.avg_score, r.avg_confidence, r.citation_hit_rate,
                    r.recall_at_k, r.mrr, r.answer_accuracy, r.abstention_accuracy, r.access_control_accuracy,
+                   r.citation_faithfulness, r.safety_assertion_accuracy,
+                   r.generation_modes_json, r.models_json, r.prompt_versions_json,
+                   r.total_prompt_tokens, r.total_completion_tokens, r.total_tokens,
+                   r.estimated_cost_usd, r.avg_latency_ms, r.breakdown_json,
                    r.gate_status, r.thresholds_json, r.minimum_cases, r.max_regression,
                    r.failed_metrics_json, r.metric_deltas_json, r.baseline_run_id, r.baseline_reference, r.created_at,
                    u.display_name
@@ -2242,6 +2388,10 @@ def export_batch_run(run_id: int, format: str = "md", user: dict = Depends(curre
                 SELECT r.id, r.dataset_version, r.dataset_hash, r.top_k,
                        r.total, r.avg_score, r.avg_confidence, r.citation_hit_rate,
                        r.recall_at_k, r.mrr, r.answer_accuracy, r.abstention_accuracy, r.access_control_accuracy,
+                       r.citation_faithfulness, r.safety_assertion_accuracy,
+                       r.generation_modes_json, r.models_json, r.prompt_versions_json,
+                       r.total_prompt_tokens, r.total_completion_tokens, r.total_tokens,
+                       r.estimated_cost_usd, r.avg_latency_ms, r.breakdown_json,
                        r.gate_status, r.thresholds_json, r.minimum_cases, r.max_regression,
                        r.failed_metrics_json, r.metric_deltas_json, r.baseline_run_id, r.baseline_reference, r.created_at,
                        u.display_name
@@ -2257,6 +2407,10 @@ def export_batch_run(run_id: int, format: str = "md", user: dict = Depends(curre
                 SELECT r.id, r.dataset_version, r.dataset_hash, r.top_k,
                        r.total, r.avg_score, r.avg_confidence, r.citation_hit_rate,
                        r.recall_at_k, r.mrr, r.answer_accuracy, r.abstention_accuracy, r.access_control_accuracy,
+                       r.citation_faithfulness, r.safety_assertion_accuracy,
+                       r.generation_modes_json, r.models_json, r.prompt_versions_json,
+                       r.total_prompt_tokens, r.total_completion_tokens, r.total_tokens,
+                       r.estimated_cost_usd, r.avg_latency_ms, r.breakdown_json,
                        r.gate_status, r.thresholds_json, r.minimum_cases, r.max_regression,
                        r.failed_metrics_json, r.metric_deltas_json, r.baseline_run_id, r.baseline_reference, r.created_at,
                        u.display_name
@@ -2273,7 +2427,13 @@ def export_batch_run(run_id: int, format: str = "md", user: dict = Depends(curre
             SELECT actor_role, question, expected_keywords, expected_documents, answer, score,
                    confidence, citation_hit, citations_json, should_answer,
                    retrieval_recall, reciprocal_rank, answer_correct, abstention_correct,
-                   access_control_correct
+                   access_control_correct, difficulty, capabilities_json,
+                   answer_completeness, citation_faithfulness,
+                   forbidden_keyword_correct, forbidden_document_correct,
+                   citation_count_correct, safety_assertion_correct,
+                   generation_mode, model, prompt_version,
+                   prompt_tokens, completion_tokens, total_tokens,
+                   estimated_cost_usd, latency_ms
             FROM batch_eval_results
             WHERE run_id = ?
             ORDER BY id
@@ -2640,7 +2800,9 @@ def analytics(user: dict = Depends(current_user)) -> dict:
             ).fetchone()
             latest_batch = conn.execute(
                 """
-                SELECT avg_score, avg_confidence, citation_hit_rate
+                SELECT avg_score, avg_confidence, citation_hit_rate,
+                       recall_at_k, mrr, answer_accuracy, abstention_accuracy,
+                       access_control_accuracy, citation_faithfulness, safety_assertion_accuracy
                 FROM batch_eval_runs ORDER BY id DESC LIMIT 1
                 """
             ).fetchone()
@@ -2671,7 +2833,9 @@ def analytics(user: dict = Depends(current_user)) -> dict:
             ).fetchone()
             latest_batch = conn.execute(
                 """
-                SELECT avg_score, avg_confidence, citation_hit_rate
+                SELECT avg_score, avg_confidence, citation_hit_rate,
+                       recall_at_k, mrr, answer_accuracy, abstention_accuracy,
+                       access_control_accuracy, citation_faithfulness, safety_assertion_accuracy
                 FROM batch_eval_runs WHERE user_id = ?
                 ORDER BY id DESC LIMIT 1
                 """,
@@ -3251,7 +3415,8 @@ def find_evaluation_baseline(requested_run_id: int | None, dataset_hash: str, to
             row = conn.execute(
                 """
                 SELECT id, dataset_hash, top_k, recall_at_k, mrr,
-                       answer_accuracy, abstention_accuracy, access_control_accuracy
+                       answer_accuracy, abstention_accuracy, access_control_accuracy,
+                       citation_faithfulness, safety_assertion_accuracy
                 FROM batch_eval_runs WHERE id = ?
                 """,
                 (requested_run_id,),
@@ -3266,7 +3431,8 @@ def find_evaluation_baseline(requested_run_id: int | None, dataset_hash: str, to
         row = conn.execute(
             """
             SELECT id, dataset_hash, top_k, recall_at_k, mrr,
-                   answer_accuracy, abstention_accuracy, access_control_accuracy
+                   answer_accuracy, abstention_accuracy, access_control_accuracy,
+                   citation_faithfulness, safety_assertion_accuracy
             FROM batch_eval_runs
             WHERE dataset_hash = ? AND top_k = ? AND gate_status = 'passed'
             ORDER BY id DESC LIMIT 1
@@ -3291,6 +3457,19 @@ def serialize_evaluation_case(row) -> dict:
     item = dict(row)
     item["expected_keywords"] = json.loads(item["expected_keywords"])
     item["expected_documents"] = json.loads(item["expected_documents"])
+    item["capabilities"] = json.loads(item.pop("capabilities_json", "[]") or "[]")
+    item["required_keyword_groups"] = json.loads(
+        item.pop("required_keyword_groups_json", "[]") or "[]"
+    )
+    item["forbidden_keywords"] = json.loads(
+        item.pop("forbidden_keywords_json", "[]") or "[]"
+    )
+    item["expected_document_groups"] = json.loads(
+        item.pop("expected_document_groups_json", "[]") or "[]"
+    )
+    item["forbidden_documents"] = json.loads(
+        item.pop("forbidden_documents_json", "[]") or "[]"
+    )
     item["should_answer"] = bool(item["should_answer"])
     item["is_golden"] = bool(item.get("case_key"))
     return item
@@ -3301,6 +3480,10 @@ def serialize_batch_run(row) -> dict:
     item["thresholds"] = json.loads(item.pop("thresholds_json", "{}") or "{}")
     item["failed_metrics"] = json.loads(item.pop("failed_metrics_json", "[]") or "[]")
     item["metric_deltas"] = json.loads(item.pop("metric_deltas_json", "{}") or "{}")
+    item["generation_modes"] = json.loads(item.pop("generation_modes_json", "[]") or "[]")
+    item["models"] = json.loads(item.pop("models_json", "[]") or "[]")
+    item["prompt_versions"] = json.loads(item.pop("prompt_versions_json", "[]") or "[]")
+    item["breakdowns"] = json.loads(item.pop("breakdown_json", "{}") or "{}")
     return item
 
 
@@ -3355,6 +3538,14 @@ def render_batch_markdown(run: dict, results: list[dict]) -> str:
         f"- 答案正确率：{run.get('answer_accuracy', 0):.2%}",
         f"- 拒答准确率：{run.get('abstention_accuracy', 0):.2%}",
         f"- 访问控制准确率：{run.get('access_control_accuracy', 0):.2%}",
+        f"- 引用忠实度：{run.get('citation_faithfulness', 0):.2%}",
+        f"- 安全断言准确率：{run.get('safety_assertion_accuracy', 0):.2%}",
+        f"- 生成模式：{', '.join(run.get('generation_modes') or []) or '未知'}",
+        f"- 模型：{', '.join(run.get('models') or []) or '未知'}",
+        f"- Prompt 版本：{', '.join(run.get('prompt_versions') or []) or '未知'}",
+        f"- Token：{run.get('total_tokens', 0)}（输入 {run.get('total_prompt_tokens', 0)} / 输出 {run.get('total_completion_tokens', 0)}）",
+        f"- 估算成本：${run.get('estimated_cost_usd', 0):.6f}",
+        f"- 平均耗时：{run.get('avg_latency_ms', 0):.2f} ms",
         "",
         "## 明细",
         "",
@@ -3363,12 +3554,15 @@ def render_batch_markdown(run: dict, results: list[dict]) -> str:
         keywords = ", ".join(json.loads(row["expected_keywords"]))
         docs = ", ".join(json.loads(row["expected_documents"]))
         citations = json.loads(row["citations_json"])
+        capabilities = json.loads(row.get("capabilities_json") or "[]")
         citation_titles = ", ".join(item.get("document_title", "") for item in citations[:3])
         lines.extend(
             [
                 f"### {index}. {row['question']}",
                 "",
                 f"- 执行角色：{row.get('actor_role', 'admin')}",
+                f"- 难度：{row.get('difficulty', 'custom')}",
+                f"- 能力标签：{', '.join(capabilities) or '未分类'}",
                 f"- 期望关键词：{keywords}",
                 f"- 期望来源：{docs}",
                 f"- 得分：{row['score']:.2%}",
@@ -3380,6 +3574,15 @@ def render_batch_markdown(run: dict, results: list[dict]) -> str:
                 f"- 答案判断：{'正确' if row.get('answer_correct') else '错误'}",
                 f"- 拒答判断：{'正确' if row.get('abstention_correct') else '错误'}",
                 f"- 访问控制：{'正确' if row.get('access_control_correct') else '错误'}",
+                f"- 答案完整度：{row.get('answer_completeness', 0):.2%}",
+                (
+                    f"- 引用忠实度：{row['citation_faithfulness']:.2%}"
+                    if row.get("citation_faithfulness") is not None
+                    else "- 引用忠实度：N/A"
+                ),
+                f"- 安全断言：{'正确' if row.get('safety_assertion_correct') else '错误'}",
+                f"- 生成证据：{row.get('generation_mode', 'unknown')} / {row.get('model', 'unknown')} / {row.get('prompt_version', 'unknown')}",
+                f"- Token / 耗时：{row.get('total_tokens', 0)} / {row.get('latency_ms', 0)} ms",
                 f"- 命中来源：{citation_titles or '无'}",
                 "",
                 row["answer"],
@@ -3554,6 +3757,8 @@ def render_batch_csv(run: dict, results: list[dict]) -> str:
     header = [
         "run_id",
         "actor_role",
+        "difficulty",
+        "capabilities",
         "question",
         "expected_keywords",
         "expected_documents",
@@ -3566,6 +3771,20 @@ def render_batch_csv(run: dict, results: list[dict]) -> str:
         "answer_correct",
         "abstention_correct",
         "access_control_correct",
+        "answer_completeness",
+        "citation_faithfulness",
+        "forbidden_keyword_correct",
+        "forbidden_document_correct",
+        "citation_count_correct",
+        "safety_assertion_correct",
+        "generation_mode",
+        "model",
+        "prompt_version",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "estimated_cost_usd",
+        "latency_ms",
         "answer",
     ]
     lines = [",".join(header)]
@@ -3573,6 +3792,8 @@ def render_batch_csv(run: dict, results: list[dict]) -> str:
         values = [
             str(run["id"]),
             row.get("actor_role", "admin"),
+            row.get("difficulty", "custom"),
+            ";".join(json.loads(row.get("capabilities_json") or "[]")),
             row["question"],
             ";".join(json.loads(row["expected_keywords"])),
             ";".join(json.loads(row["expected_documents"])),
@@ -3585,6 +3806,20 @@ def render_batch_csv(run: dict, results: list[dict]) -> str:
             str(int(row.get("answer_correct") or 0)),
             str(int(row.get("abstention_correct") or 0)),
             str(int(row.get("access_control_correct") or 0)),
+            f"{row.get('answer_completeness', 0):.4f}",
+            "" if row.get("citation_faithfulness") is None else f"{row['citation_faithfulness']:.4f}",
+            str(int(row.get("forbidden_keyword_correct") or 0)),
+            str(int(row.get("forbidden_document_correct") or 0)),
+            str(int(row.get("citation_count_correct") or 0)),
+            str(int(row.get("safety_assertion_correct") or 0)),
+            row.get("generation_mode", "unknown"),
+            row.get("model", "unknown"),
+            row.get("prompt_version", "unknown"),
+            str(int(row.get("prompt_tokens") or 0)),
+            str(int(row.get("completion_tokens") or 0)),
+            str(int(row.get("total_tokens") or 0)),
+            f"{float(row.get('estimated_cost_usd') or 0):.6f}",
+            str(int(row.get("latency_ms") or 0)),
             row["answer"],
         ]
         lines.append(",".join(csv_escape(value) for value in values))

@@ -30,7 +30,7 @@ def test_missing_key_condition_triggers_grounded_refusal():
 
     assert "未找到覆盖问题关键条件的明确依据" in answer
     assert confidence < 0.16
-    assert citations
+    assert citations == []
     assert generation["fallback_reason"] == "insufficient_evidence_coverage"
     assert "火星" in generation["missing_evidence_terms"]
     assert generation["evidence_coverage"] < 0.7

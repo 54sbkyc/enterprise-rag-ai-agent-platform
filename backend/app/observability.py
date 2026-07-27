@@ -22,6 +22,7 @@ def build_usage_summary(question: str, citations: list[dict], answer: str, gener
         "provider_attempts": 0,
         "provider_latency_ms": 0,
         "provider_status_code": None,
+        "prompt_version": "grounded-answer-v1",
     }
     provider_usage = generation.get("provider_usage") or {}
     token_source = "provider" if generation.get("mode") == "llm" and provider_usage else "estimated"
@@ -41,6 +42,7 @@ def build_usage_summary(question: str, citations: list[dict], answer: str, gener
         "provider_attempts": int(generation.get("provider_attempts") or 0),
         "provider_latency_ms": int(generation.get("provider_latency_ms") or 0),
         "provider_status_code": generation.get("provider_status_code"),
+        "prompt_version": generation.get("prompt_version") or "grounded-answer-v1",
         "evidence_coverage": generation.get("evidence_coverage"),
         "missing_evidence_terms": generation.get("missing_evidence_terms") or [],
         "token_source": token_source,
@@ -109,6 +111,7 @@ def build_agent_trace(
                     "provider_attempts": usage.get("provider_attempts", 0),
                     "provider_latency_ms": usage.get("provider_latency_ms", 0),
                     "provider_status_code": usage.get("provider_status_code"),
+                    "prompt_version": usage.get("prompt_version"),
                     "evidence_coverage": usage.get("evidence_coverage"),
                     "missing_evidence_terms": usage.get("missing_evidence_terms") or [],
                     "token_source": usage.get("token_source"),

@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 
 from .provider_gateway import policy_from_env, post_json
 
+RAG_PROMPT_VERSION = "grounded-answer-v1"
+
 
 @dataclass(frozen=True)
 class LLMGeneration:
@@ -14,6 +16,7 @@ class LLMGeneration:
     provider_attempts: int = 0
     provider_latency_ms: int = 0
     provider_status_code: int | None = None
+    prompt_version: str = RAG_PROMPT_VERSION
 
 
 def generate_with_llm(question: str, citations: list[dict]) -> LLMGeneration:

@@ -5,7 +5,7 @@
 相关材料：
 
 - GitHub 仓库：[enterprise-rag-ai-agent-platform](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform)
-- 正式版本：[v1.7.0](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.7.0)
+- 正式版本：[v1.8.0](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/releases/tag/v1.8.0)
 - 持续集成：[GitHub Actions](https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/actions/workflows/tests.yml)
 - 面试讲解：[interview_talking_points.md](interview_talking_points.md)
 - 面试前检查：[interview_demo_checklist.md](interview_demo_checklist.md)
@@ -25,7 +25,7 @@
 ```text
 企业知识库 RAG + AI Agent 平台 | Python / FastAPI / SQLite / PostgreSQL / pgvector / JavaScript
 - 基于 FastAPI + SQLite + 原生前端实现企业知识库问答系统，支持标题/正文字段加权 BM25、可选 Embedding、pgvector HNSW 召回、融合重排、引用溯源、关键条件覆盖拒答和角色权限过滤。
-- 设计关键条件覆盖率拒答和 12 条角色化 RAG 质量门禁，使用黄金集指纹、批准基线和历史运行回退检测；Recall@K、MRR、答案、拒答与访问控制五项批准基线均为 100%。
+- 设计分词证据覆盖、数字硬条件和 50 条分层角色化 RAG 门禁，严格检查事实组、来源组、禁答词和禁用文档；批准基线 Recall@K 100%、MRR 0.9544，其余五项质量与安全指标 100%。
 - 设计受控 Agent 规划与执行链路，实现工具白名单、权限校验、超时重试、失败状态、运行生命周期持久化和逐步耗时追踪。
 - 建设共享模型韧性网关，统一问答、Embedding 和 Agent Planner 的选择性重试、指数退避、`Retry-After`、熔断与错误分类，并记录真实尝试次数、延迟和 HTTP 状态。
 - 建设 SQLite 版本化 Schema 迁移，以 SHA-256 校验历史，通过逐版本事务、并发锁、在线备份和 readiness 检查保障旧库升级。
@@ -37,7 +37,7 @@
 ## 面试 60 秒介绍
 
 ```text
-这个项目是我面向 AI 应用开发岗位做的企业知识库 RAG + AI Agent 平台。它不是聊天套壳，而是从企业内部资料问答出发，完成了文档入库、权限过滤、字段加权 BM25、可选 pgvector HNSW 向量召回、引用溯源和关键条件拒答。我把检索和生成质量拆成 Recall@K、MRR、答案、拒答与访问控制准确率，并用 12 条角色化黄金集、批准基线和失败退出码做 CI 回归门禁；模型调用统一做选择性重试、退避、熔断和故障降级，Agent 具备工具白名单、异步执行、幂等、取消重试和运行轨迹，SQLite Schema 则通过版本历史、校验值、事务和在线备份安全演进。交付侧使用非 root 容器、连接池、强密码引导、持久卷和真实 PostgreSQL CI，同时明确说明 SQLite 业务事实源、应用内 BM25 和单实例任务执行器等生产化边界。
+这个项目是我面向 AI 应用开发岗位做的企业知识库 RAG + AI Agent 平台。它不是聊天套壳，而是从企业内部资料问答出发，完成了文档入库、权限过滤、字段加权 BM25、可选 pgvector HNSW 向量召回、引用溯源和证据不足拒答。我用 50 条按角色、难度和能力分层的黄金集，把质量拆成 Recall@K、MRR、答案、拒答、访问控制、引用忠实与安全断言，并持久化模型、Prompt、Token、成本和耗时作为可审计证据；模型调用统一做选择性重试、退避、熔断和故障降级，Agent 具备工具白名单、异步执行、幂等、取消重试和运行轨迹，SQLite Schema 则通过版本历史、校验值、事务和在线备份安全演进。交付侧使用非 root 容器、连接池、强密码引导、持久卷和真实 PostgreSQL CI，同时明确说明 SQLite 业务事实源、应用内 BM25 和单实例任务执行器等生产化边界。
 ```
 
 ## 面试追问时的展开点

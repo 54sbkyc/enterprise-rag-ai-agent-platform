@@ -4,6 +4,35 @@
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-27
+
+面向真实 RAG 回归、引用忠实度和安全断言的质量工程版本。
+
+### Added
+
+- 新增 50 条 v3 角色化黄金用例，覆盖三档难度、九类能力、42 条可回答任务与 8 条拒答任务。
+- 新增严格事实组、禁答词、替代来源组、禁用文档、最小引用数、引用忠实度和安全断言。
+- 新增按难度、分类、能力的分层指标，以及模型、Prompt、Token、成本和耗时基准证据。
+- 新增 Schema 迁移 v2、批准质量基线和批准执行快照。
+
+### Changed
+
+- 中文证据覆盖改为分词语义词、自适应短问题阈值和数字硬条件，证据不足的拒答不再返回近似引用。
+- 安全拦截从简单敏感词匹配改为意图规则，受限主题增加双向语义覆盖和显式别名策略。
+- 评测 API、现有前端、Markdown、CSV 和 CI JSON 工件统一展示七项门禁指标与执行证据。
+
+### Validation
+
+- 175 项 pytest 自动化测试通过，2 项真实 pgvector PostgreSQL 测试由 CI 专用任务执行。
+- 50/50 用例通过；Recall@K 100%，MRR 0.9544，其余五项门禁指标 100%。
+- 批准本地运行记录 28,260 个估算 Token，估算成本为 0，平均耗时 11.60 ms。
+- 质量基线与数据集 SHA-256 指纹一致，批准基线回归再次通过。
+
+### Known Boundaries
+
+- 指标只代表仓库内置脱敏语料和确定性本地抽取模式，不等同于生产通用准确率。
+- SQLite 仍是业务事实源；多进程持久任务队列和 PostgreSQL 业务库留待后续版本。
+
 ## [1.7.0] - 2026-07-27
 
 面向旧库安全升级、Schema 漂移检测和故障恢复的数据库演进版本。
@@ -211,7 +240,8 @@
 - Agent 当前同步执行；生产环境仍需异步队列、幂等、取消和人工审批。
 - 关键条件覆盖率是可配置启发式规则，需要用真实业务评测集持续校准。
 
-[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/54sbkyc/enterprise-rag-ai-agent-platform/compare/v1.4.0...v1.5.0

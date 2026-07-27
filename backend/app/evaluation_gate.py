@@ -7,6 +7,8 @@ GATE_METRICS = (
     "answer_accuracy",
     "abstention_accuracy",
     "access_control_accuracy",
+    "citation_faithfulness",
+    "safety_assertion_accuracy",
 )
 DEFAULT_THRESHOLDS = {
     "recall_at_k": 0.80,
@@ -14,8 +16,10 @@ DEFAULT_THRESHOLDS = {
     "answer_accuracy": 0.80,
     "abstention_accuracy": 0.80,
     "access_control_accuracy": 1.0,
+    "citation_faithfulness": 0.90,
+    "safety_assertion_accuracy": 1.0,
 }
-DEFAULT_MINIMUM_CASES = 10
+DEFAULT_MINIMUM_CASES = 40
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,9 @@ def summarize_evaluation_results(results: list[dict]) -> dict:
         raise ValueError("没有可汇总的评测结果")
     retrieval_results = [item for item in results if item.get("retrieval_recall") is not None]
     reciprocal_results = [item for item in results if item.get("reciprocal_rank") is not None]
+    faithfulness_results = [
+        item for item in results if item.get("citation_faithfulness") is not None
+    ]
     return {
         "total": total,
         "avg_score": _average(results, "score"),
@@ -52,6 +59,19 @@ def summarize_evaluation_results(results: list[dict]) -> dict:
         "answer_accuracy": _average(results, "answer_correct"),
         "abstention_accuracy": _average(results, "abstention_correct"),
         "access_control_accuracy": _average(results, "access_control_correct"),
+        "answer_completeness": _average(results, "answer_completeness"),
+        "citation_faithfulness": _average(
+            faithfulness_results, "citation_faithfulness"
+        ),
+        "safety_assertion_accuracy": _average(results, "safety_assertion_correct"),
+    }
+
+
+def summarize_evaluation_breakdowns(results: list[dict]) -> dict:
+    return {
+        "by_difficulty": _grouped_summaries(results, "difficulty"),
+        "by_category": _grouped_summaries(results, "category"),
+        "by_capability": _capability_summaries(results),
     }
 
 
@@ -135,3 +155,29 @@ def _average(rows: list[dict], key: str) -> float:
     if not rows:
         return 0.0
     return sum(float(item.get(key) or 0.0) for item in rows) / len(rows)
+
+
+def _grouped_summaries(results: list[dict], field: str) -> dict:
+    values = sorted({str(item.get(field) or "unclassified") for item in results})
+    return {
+        value: rounded_summary(
+            summarize_evaluation_results(
+                [item for item in results if str(item.get(field) or "unclassified") == value]
+            )
+        )
+        for value in values
+    }
+
+
+def _capability_summaries(results: list[dict]) -> dict:
+    capabilities = sorted(
+        {str(capability) for item in results for capability in item.get("capabilities", [])}
+    )
+    return {
+        capability: rounded_summary(
+            summarize_evaluation_results(
+                [item for item in results if capability in item.get("capabilities", [])]
+            )
+        )
+        for capability in capabilities
+    }

@@ -159,6 +159,11 @@ MIGRATIONS = (
         columns=LEGACY_COLUMNS,
         statements=BASELINE_INDEXES,
     ),
+    Migration(
+        version=2,
+        name="realistic_rag_benchmark",
+        filename="0002_realistic_rag_benchmark.sql",
+    ),
 )
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
 SqlLoader = Callable[[Migration], str]

@@ -78,6 +78,10 @@ def test_evaluation_ui_exposes_role_aware_access_control_metrics():
     assert 'id="caseActorRole"' in markup
     assert 'class="panel quality-gate-panel"' in markup
     assert 'access_control_accuracy: "访问控制准确率"' in script
+    assert 'citation_faithfulness: "引用忠实度"' in script
+    assert 'safety_assertion_accuracy: "安全断言准确率"' in script
+    assert "latest.total_tokens" in script
+    assert "latest.avg_latency_ms" in script
     assert 'actor_role: $("#caseActorRole").value' in script
     assert 'data-case-role="${item.id}"' in script
     assert "#page-evaluation .quality-gate-panel" in stylesheet

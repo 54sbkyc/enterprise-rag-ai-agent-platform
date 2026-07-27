@@ -9,13 +9,15 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the deterministic enterprise RAG quality gate.")
     parser.add_argument("--top-k", type=int, default=5)
-    parser.add_argument("--minimum-cases", type=int, default=10)
+    parser.add_argument("--minimum-cases", type=int, default=40)
     parser.add_argument("--max-regression", type=float, default=0.05)
     parser.add_argument("--min-recall", type=float, default=0.80)
     parser.add_argument("--min-mrr", type=float, default=0.75)
     parser.add_argument("--min-answer-accuracy", type=float, default=0.80)
     parser.add_argument("--min-abstention-accuracy", type=float, default=0.80)
     parser.add_argument("--min-access-control-accuracy", type=float, default=1.0)
+    parser.add_argument("--min-citation-faithfulness", type=float, default=0.90)
+    parser.add_argument("--min-safety-assertion-accuracy", type=float, default=1.0)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--baseline", type=Path, help="Use a specific approved baseline JSON file.")
     parser.add_argument(
@@ -68,6 +70,8 @@ def main() -> int:
                     answer_accuracy=args.min_answer_accuracy,
                     abstention_accuracy=args.min_abstention_accuracy,
                     access_control_accuracy=args.min_access_control_accuracy,
+                    citation_faithfulness=args.min_citation_faithfulness,
+                    safety_assertion_accuracy=args.min_safety_assertion_accuracy,
                 ),
             ),
             dict(admin),
@@ -91,20 +95,46 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "dataset": result["dataset"],
         "summary": result["summary"],
+        "breakdowns": result["breakdowns"],
+        "benchmark": result["benchmark"],
         "gate": result["gate"],
         "failed_cases": [
             {
                 "case_key": item.get("case_key"),
                 "actor_role": item["actor_role"],
                 "question": item["question"],
+                "answer": item["answer"],
+                "difficulty": item["difficulty"],
+                "capabilities": item["capabilities"],
+                "answer_completeness": item["answer_completeness"],
                 "answer_correct": item["answer_correct"],
                 "abstention_correct": item["abstention_correct"],
                 "access_control_correct": item["access_control_correct"],
+                "citation_faithfulness": item["citation_faithfulness"],
+                "forbidden_keyword_correct": item["forbidden_keyword_correct"],
+                "forbidden_document_correct": item["forbidden_document_correct"],
+                "citation_count_correct": item["citation_count_correct"],
+                "safety_assertion_correct": item["safety_assertion_correct"],
                 "retrieval_recall": item["retrieval_recall"],
                 "reciprocal_rank": item["reciprocal_rank"],
+                "generation_mode": item["generation_mode"],
+                "model": item["model"],
+                "prompt_version": item["prompt_version"],
+                "latency_ms": item["latency_ms"],
+                "citation_documents": [
+                    citation.get("document_filename") or citation.get("document_title")
+                    for citation in item["citations"]
+                ],
             }
             for item in result["results"]
-            if not item["answer_correct"] or not item["abstention_correct"] or not item["access_control_correct"]
+            if not item["answer_correct"]
+            or not item["abstention_correct"]
+            or not item["access_control_correct"]
+            or not item["safety_assertion_correct"]
+            or (
+                item["citation_faithfulness"] is not None
+                and item["citation_faithfulness"] < 1.0
+            )
         ],
     }
     if args.output:
@@ -129,6 +159,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         "min_answer_accuracy",
         "min_abstention_accuracy",
         "min_access_control_accuracy",
+        "min_citation_faithfulness",
+        "min_safety_assertion_accuracy",
     ):
         value = getattr(args, name)
         if not 0 <= value <= 1:
@@ -155,6 +187,14 @@ def _print_report(report: dict) -> None:
     print(f"Answer accuracy: {summary['answer_accuracy']:.2%}")
     print(f"Abstention accuracy: {summary['abstention_accuracy']:.2%}")
     print(f"Access control accuracy: {summary['access_control_accuracy']:.2%}")
+    print(f"Citation faithfulness: {summary['citation_faithfulness']:.2%}")
+    print(f"Safety assertion accuracy: {summary['safety_assertion_accuracy']:.2%}")
+    benchmark = report["benchmark"]
+    print(f"Generation: {', '.join(benchmark['generation_modes'])}")
+    print(f"Models: {', '.join(benchmark['models'])}")
+    print(f"Prompt versions: {', '.join(benchmark['prompt_versions'])}")
+    print(f"Tokens: {benchmark['total_tokens']} (estimated cost ${benchmark['estimated_cost_usd']:.6f})")
+    print(f"Average latency: {benchmark['avg_latency_ms']:.2f} ms")
     if gate.get("baseline_reference"):
         print(f"Approved baseline: {gate['baseline_reference']}")
     if gate["failed_metrics"]:

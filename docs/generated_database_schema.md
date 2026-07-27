@@ -13,9 +13,9 @@
 | `chunks` | 存储知识片段、词频 JSON、向量 JSON、模型和内容哈希。 |
 | `qa_logs` | 存储问答日志，包括问题、回答、置信度、拦截信息、引用 JSON。 |
 | `evaluations` | 存储单条评测结果，包括期望关键词、期望来源、得分、引用命中率。 |
-| `evaluation_cases` | 存储黄金/自定义评测用例、稳定键、数据集版本、业务分类和是否应回答标记。 |
-| `batch_eval_runs` | 存储评测指标、数据集指纹、门禁策略、失败指标、基线引用及指标差异。 |
-| `batch_eval_results` | 存储批量评测每条用例的明细结果。 |
+| `evaluation_cases` | 存储黄金/自定义评测用例、难度、能力标签、严格事实与来源断言、安全断言。 |
+| `batch_eval_runs` | 存储七项质量指标、数据集指纹、门禁策略、模型/Prompt、Token/成本/延迟和分层结果。 |
+| `batch_eval_results` | 存储批量评测每条用例的事实、来源、引用忠实度、访问控制和安全断言明细。 |
 | `agent_runs` | 存储 Agent 任务状态、计划、工具轨迹、幂等键、取消和重试关系。 |
 | `audit_logs` | 存储管理员操作审计。 |
 
@@ -50,13 +50,26 @@
 | `evaluation_cases` | `case_key` | 黄金用例的稳定唯一标识；自定义用例为空。 |
 | `evaluation_cases` | `dataset_version` | 用例所属黄金集版本或 `custom`。 |
 | `evaluation_cases` | `actor_role` | 执行用例时采用的管理员、技术员工或普通员工角色。 |
+| `evaluation_cases` | `difficulty` | 用例难度，取值为 `easy`、`medium` 或 `hard`。 |
+| `evaluation_cases` | `capabilities_json` | 用例覆盖的检索、生成、权限、安全等能力标签。 |
+| `evaluation_cases` | `expected_fact_groups_json` | 必须完整命中的事实组；组内可配置同义表达。 |
+| `evaluation_cases` | `expected_document_groups_json` | 可接受的来源文档组；每组至少命中一个候选文档。 |
+| `evaluation_cases` | `forbidden_values_json` | 回答中不得出现的敏感值或越权内容。 |
+| `evaluation_cases` | `min_citation_count` | 对应回答至少需要返回的引用数量。 |
 | `batch_eval_runs` | `avg_score` | 批量评测平均得分。 |
 | `batch_eval_runs` | `avg_confidence` | 批量评测平均置信度。 |
 | `batch_eval_runs` | `citation_hit_rate` | 批量评测引用命中率。 |
 | `batch_eval_runs` | `dataset_hash` | 规范化用例内容的 SHA-256 指纹，用于匹配兼容基线。 |
 | `batch_eval_runs` | `gate_status` | 绝对阈值和相对回退检查后的门禁结论。 |
-| `batch_eval_runs` | `thresholds_json` | Recall@K、MRR、答案、拒答和访问控制准确率阈值。 |
+| `batch_eval_runs` | `thresholds_json` | Recall@K、MRR、答案、拒答、访问控制、引用忠实度和安全断言阈值。 |
 | `batch_eval_runs` | `access_control_accuracy` | 所有用例引用均处于执行角色权限范围内的比例。 |
+| `batch_eval_runs` | `citation_faithfulness_accuracy` | 引用数量、来源和回答事实均满足严格断言的用例比例。 |
+| `batch_eval_runs` | `safety_assertion_accuracy` | 拒答、禁止值和禁止来源均满足安全断言的用例比例。 |
+| `batch_eval_runs` | `model_name` / `embedding_model` | 本次评测实际使用的生成模型和向量模型。 |
+| `batch_eval_runs` | `prompt_version` | 本次评测采用的版本化系统提示词。 |
+| `batch_eval_runs` | `estimated_tokens` / `estimated_cost_usd` | 可复核的 Token 与成本估算。 |
+| `batch_eval_runs` | `avg_latency_ms` / `total_latency_ms` | 单用例平均延迟与整批总延迟。 |
+| `batch_eval_runs` | `breakdowns_json` | 按难度、业务分类和能力标签聚合的质量指标。 |
 | `batch_eval_runs` | `metric_deltas_json` | 当前指标相对历史基线的变化。 |
 | `batch_eval_runs` | `baseline_reference` | 历史运行编号或随代码提交的批准基线版本。 |
 | `agent_runs` | `status` | 任务状态，包括 queued、running、cancel_requested、cancelled、completed、blocked 和 failed。 |
@@ -73,3 +86,4 @@
 - 密级字段存储在文档表，检索和问答时统一按用户角色过滤。
 - 引用、关键词、期望来源等半结构化字段使用 JSON 字符串保存，便于扩展。
 - 黄金数据集保存在 Git 中并通过稳定键同步；界面新增的自定义用例不会覆盖版本化基线。
+- 历史批量结果在黄金用例升级后继续保留；被新版本移除的旧黄金用例只解除明细关联，不破坏历史证据。

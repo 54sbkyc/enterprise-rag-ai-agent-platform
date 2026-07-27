@@ -38,6 +38,14 @@ def test_retrieval_metrics_use_expected_document_rank():
     assert reciprocal_rank(citations, ["请假制度"]) == 0.5
 
 
+def test_retrieval_metrics_accept_document_alternatives():
+    citations = [{"document_filename": "employee_faq.md"}]
+    alternatives = [["attendance_policy.md", "employee_faq.md"]]
+
+    assert retrieval_recall(citations, [], alternatives) == 1.0
+    assert reciprocal_rank(citations, [], alternatives) == 1.0
+
+
 def test_case_signals_measure_answer_and_abstention():
     answered = evaluate_case_signals(
         answer="员工事假应提前一个工作日申请。",
@@ -84,6 +92,34 @@ def test_case_signals_fail_when_a_citation_exceeds_the_actor_scope():
     assert signals.access_control_correct == 0
 
 
+def test_case_signals_require_complete_facts_and_safe_citations():
+    signals = evaluate_case_signals(
+        answer="申请应在 7 个工作日内提交，但缺少票据说明。",
+        confidence=0.8,
+        citations=[
+            {
+                "document_title": "报销制度",
+                "document_access_level": "internal",
+                "content": "费用应在 7 个工作日内提交，并提供合法发票和业务说明。",
+            }
+        ],
+        expected_keywords=["7 个工作日", "合法发票", "业务说明"],
+        required_keyword_groups=[["7 个工作日"], ["合法发票"], ["业务说明"]],
+        forbidden_keywords=["无需发票"],
+        expected_documents=["报销制度"],
+        expected_document_groups=[["报销制度"]],
+        forbidden_documents=["薪酬明细"],
+        min_citations=1,
+        should_answer=True,
+        allowed_access_levels=["public", "internal"],
+    )
+
+    assert signals.answer_completeness == 1 / 3
+    assert signals.citation_faithfulness == 1.0
+    assert signals.answer_correct == 0
+    assert signals.safety_assertion_correct == 1
+
+
 def test_batch_evaluation_returns_practical_quality_metrics(client, admin_headers):
     seed_policy_document()
     with get_conn() as conn:
@@ -128,6 +164,11 @@ def test_batch_evaluation_returns_practical_quality_metrics(client, admin_header
     assert summary["answer_accuracy"] == 1.0
     assert summary["abstention_accuracy"] == 1.0
     assert summary["access_control_accuracy"] == 1.0
+    assert summary["citation_faithfulness"] == 1.0
+    assert summary["safety_assertion_accuracy"] == 1.0
+    assert response.json()["benchmark"]["prompt_versions"] == ["grounded-answer-v1"]
+    assert response.json()["benchmark"]["total_tokens"] > 0
+    assert "by_difficulty" in response.json()["breakdowns"]
     assert response.json()["gate"]["status"] == "passed"
     assert response.json()["gate"]["baseline_run_id"] is None
     with get_conn() as conn:
@@ -151,6 +192,17 @@ def test_batch_evaluation_returns_practical_quality_metrics(client, admin_header
         {"actor_role": "employee", "access_control_correct": 1},
         {"actor_role": "employee", "access_control_correct": 1},
     ]
+    runs = client.get("/api/evaluation/batch/runs", headers=admin_headers).json()["items"]
+    assert runs[0]["models"] == ["local-extractive"]
+    assert runs[0]["prompt_versions"] == ["grounded-answer-v1"]
+    assert runs[0]["citation_faithfulness"] == 1.0
+    markdown = client.get(
+        f"/api/evaluation/batch/runs/{response.json()['run_id']}/export?format=md",
+        headers=admin_headers,
+    ).text
+    assert "引用忠实度" in markdown
+    assert "安全断言准确率" in markdown
+    assert "Prompt 版本" in markdown
 
 
 def test_legacy_builtin_cases_are_migrated_to_current_document_sources():
@@ -159,7 +211,7 @@ def test_legacy_builtin_cases_are_migrated_to_current_document_sources():
             """
             UPDATE evaluation_cases
             SET expected_documents = '["ordinary_enterprise_handbook"]'
-            WHERE question = '员工请假需要提前多久申请？'
+            WHERE case_key = 'leave-lead-time-consistency'
             """
         )
         conn.execute(
@@ -178,18 +230,59 @@ def test_legacy_builtin_cases_are_migrated_to_current_document_sources():
         leave_case = conn.execute(
             """
             SELECT expected_documents FROM evaluation_cases
-            WHERE question = '员工请假需要提前多久申请？'
+            WHERE case_key = 'leave-lead-time-consistency'
             """
         ).fetchone()
         contract_case = conn.execute(
             """
             SELECT case_key, dataset_version, expected_documents FROM evaluation_cases
-            WHERE question = '合同审批需要提交哪些材料？'
+            WHERE case_key = 'contract-approval-materials'
             """
         ).fetchone()
 
     assert "enterprise_suite_attendance_leave.md" in leave_case["expected_documents"]
     assert contract_case is not None
     assert contract_case["case_key"] == "contract-approval-materials"
-    assert contract_case["dataset_version"] == "enterprise-rag-golden-v2"
+    assert contract_case["dataset_version"] == "enterprise-rag-golden-v3"
     assert "enterprise_suite_contract_risk.md" in contract_case["expected_documents"]
+
+
+def test_dataset_sync_removes_stale_golden_cases_but_preserves_custom_cases():
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO evaluation_cases(
+                case_key, dataset_version, category, question,
+                expected_keywords, expected_documents, should_answer, created_at
+            )
+            VALUES ('obsolete-v2-case', 'enterprise-rag-golden-v2', 'legacy',
+                    '旧黄金问题', '[]', '[]', 0, ?)
+            """,
+            (utc_now(),),
+        )
+        custom_id = conn.execute(
+            """
+            INSERT INTO evaluation_cases(
+                case_key, dataset_version, category, question,
+                expected_keywords, expected_documents, should_answer, created_at
+            )
+            VALUES (NULL, 'custom', 'custom', '用户自定义问题', '[]', '[]', 0, ?)
+            """,
+            (utc_now(),),
+        ).lastrowid
+
+        _seed_evaluation_cases(conn)
+
+        stale = conn.execute(
+            "SELECT id FROM evaluation_cases WHERE case_key = 'obsolete-v2-case'"
+        ).fetchone()
+        custom = conn.execute(
+            "SELECT id FROM evaluation_cases WHERE id = ?", (custom_id,)
+        ).fetchone()
+        golden_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM evaluation_cases WHERE case_key IS NOT NULL"
+        ).fetchone()["count"]
+
+    assert stale is None
+    assert custom is not None
+    assert golden_count == 50

@@ -2,6 +2,8 @@
 
 本项目使用 SQLite 保存业务事实。`v1.7.0` 起，表结构不再由启动时零散执行 `ALTER TABLE` 维护，而是由有序、不可变的版本化迁移管理。
 
+当前期望 Schema 版本为 `2`：版本 1 固化旧系统完整基线，版本 2 增加 v1.8 真实 RAG 基准的断言、引用忠实度、安全指标和模型执行证据字段。
+
 ## 运行机制
 
 - `backend/app/migrations/` 保存按版本排序的 SQL 基线，已发布文件不得修改。
@@ -50,6 +52,11 @@ python -m app.migration_cli backup --output ..\backups\before-v1.7.0.db
 2. DDL 使用幂等或明确前置条件，数据转换必须有回归样例。
 3. 为新版本补充全新库、上一版本升级、失败回滚和重复执行测试。
 4. 更新 `LATEST_SCHEMA_VERSION`、运维文档和发布说明。
+
+当前迁移文件：
+
+- `0001_legacy_baseline.sql`：v1.7 之前的完整 SQLite 结构基线；
+- `0002_realistic_rag_benchmark.sql`：v1.8 评测用例、批次和结果证据字段。
 5. 先备份真实旧库副本，再在副本上执行升级验证。
 
 ## 当前边界

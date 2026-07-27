@@ -20,9 +20,16 @@ BM25_K1 = 1.5
 BM25_B = 0.75
 BM25_CONTENT_WEIGHT = 0.70
 BM25_TITLE_WEIGHT = 0.30
-RESTRICTED_TITLE_COVERAGE = 0.25
+RESTRICTED_TITLE_COVERAGE = 0.35
+RESTRICTED_QUERY_COVERAGE = 0.40
 MAX_VECTOR_CANDIDATE_LIMIT = 1000
 SQLITE_CANDIDATE_BATCH_SIZE = 500
+RESTRICTED_TOPIC_ALIASES = {
+    "合同审批与风险控制指南": (("合同", "审批"),),
+    "信息安全事件应急预案": (("信息安全", "事件"), ("安全事件",)),
+    "数据分级与保密管理制度": (("敏感资料",), ("敏感数据",), ("数据分级",)),
+    "销售报价与客户分级策略": (("销售", "折扣"), ("销售", "报价")),
+}
 
 
 @dataclass
@@ -296,18 +303,30 @@ def has_restricted_topic_match(question: str, access_levels: list[str]) -> bool:
             """,
             access_levels,
         ).fetchall()
-    query_terms = set(tokenize(question))
+    query_terms = _semantic_terms(question)
     if not query_terms:
         return False
+    compact_question = "".join(question.lower().split())
     for row in rows:
-        title_terms = set(tokenize(row["title"]))
+        aliases = RESTRICTED_TOPIC_ALIASES.get(row["title"], ())
+        if any(all(term in compact_question for term in group) for group in aliases):
+            return True
+        title_terms = _semantic_terms(row["title"])
         if not title_terms:
             continue
         overlap = query_terms & title_terms
-        semantic_overlap = any(len(term) >= 2 for term in overlap)
-        if semantic_overlap and len(overlap) / len(title_terms) >= RESTRICTED_TITLE_COVERAGE:
+        if (
+            len(overlap) >= 2
+            and len(overlap) / len(title_terms) >= RESTRICTED_TITLE_COVERAGE
+            and len(overlap) / len(query_terms) >= RESTRICTED_QUERY_COVERAGE
+        ):
             return True
     return False
+
+
+def _semantic_terms(text: str) -> set[str]:
+    ignored = {"需要", "哪些", "什么", "如何", "怎么", "怎样", "请问", "是否"}
+    return {term for term in tokenize(text) if len(term) >= 2 and term not in ignored}
 
 
 def _bm25_scores(query_counts: dict[str, int], documents: list[dict[str, int]]) -> list[float]:
